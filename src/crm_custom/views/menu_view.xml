@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <menuitem id="menu_partner_root" name="Partner"/>
+    <menuitem id="menu_user_root" name="User"/>
+    <menuitem id="menu_system_root" name="System"/>
+
+    <menuitem
+        id="menu_partner_model"
+        name="Partner"
+        parent="menu_partner_root"
+        action="action_partner_model"
+        sequence="1"
+    />
+
+    <menuitem
+        id="menu_crm_user_model"
+        name="User"
+        parent="menu_user_root"
+        action="action_crm_user_model"
+        sequence="2"
+    />
+
+    <menuitem
+        id="menu_crm_user_point_redeem_model"
+        name="Point Redeem"
+        parent="menu_user_root"
+        action="action_crm_user_point_redeem_model"
+        sequence="3"
+    />
+
+    <menuitem
+        id="menu_crm_otp_model"
+        name="OTP"
+        parent="menu_system_root"
+        action="action_crm_otp_model"
+        sequence="1"
+    />
+</odoo>

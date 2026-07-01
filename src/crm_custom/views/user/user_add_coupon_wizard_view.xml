@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_add_coupon_wizard_form" model="ir.ui.view">
+        <field name="name">crm.user.add.coupon.wizard.form</field>
+        <field name="model">crm.user.add.coupon.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Coupon">
+                <group>
+                    <field name="user_id"/>
+                    <field name="partner_id"/>
+                    <field name="coupon_id" domain="[('partner_id', '=', partner_id)]"/>
+                    <field name="note" placeholder="ระบุหมายเหตุ (จำเป็น)"/>
+                </group>
+                <footer>
+                    <button name="action_add_coupon" string="Add Coupon" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

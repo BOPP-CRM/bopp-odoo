@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_point_redeem_generate_wizard_form" model="ir.ui.view">
+        <field name="name">crm.user.point.redeem.generate.wizard.form</field>
+        <field name="model">crm.user.point.redeem.generate.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Generate Redeem QR">
+                <group>
+                    <field name="partner_id"/>
+                    <field name="name"/>
+                    <field name="currency_id" domain="[('partner_id', '=', partner_id)]"/>
+                    <field name="value"/>
+                    <field name="limit_per_user"/>
+                    <field name="limit_per_qr"/>
+                    <field name="expiration_date"/>
+                    <field name="reward_coupon_id"/>
+                </group>
+                <footer>
+                    <button name="action_generate" string="Generate" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+      POSTGRES_DB: odoo
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER:-odoo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  odoo:
+    build: .
+    user: odoo
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8069:8069"
+      - "8072:8072"
+    tty: true
+    env_file:
+      - .env
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+    volumes:
+      - ./config/odoo.conf.template:/etc/odoo/odoo.conf.template
+      - ./src:/mnt/extra-addons
+      - odoo-data:/var/lib/odoo
+    entrypoint: ["/entrypoint.sh"]
+
+volumes:
+  odoo-data:
+  odoo-db-data:

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_coupon_add_codes_wizard_form" model="ir.ui.view">
+        <field name="name">partner.coupon.add.codes.wizard.form</field>
+        <field name="model">partner.coupon.add.codes.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Add Coupon Codes">
+                <group>
+                    <field name="coupon_id"/>
+                    <field name="partner_id"/>
+                    <field name="add_source"/>
+                </group>
+                <group string="Generate Codes" invisible="add_source != 'generate'">
+                    <field name="code_quantity"/>
+                    <field name="prefix_code"/>
+                    <field name="random_range"/>
+                    <field name="suffix_code"/>
+                    <div class="text-muted" colspan="2">
+                        สามารถ generate ได้สูงสุด 2,000 code ต่อครั้ง
+                    </div>
+                </group>
+                <group string="Import Codes" invisible="add_source != 'import'">
+                    <button name="action_download_import_template" string="Download Template" type="object" class="btn-link" icon="fa-download"/>
+                    <field name="import_file" filename="import_filename"/>
+                    <field name="import_filename" invisible="1"/>
+                    <div class="text-muted" colspan="2">
+                        สามารถ import ได้สูงสุด 2,000 code ต่อครั้ง
+                    </div>
+                </group>
+                <footer>
+                    <button name="action_add_codes" string="Add Codes" type="object" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

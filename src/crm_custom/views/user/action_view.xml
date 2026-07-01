@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_crm_user_model" model="ir.actions.act_window">
+        <field name="name">User</field>
+        <field name="res_model">crm.user</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

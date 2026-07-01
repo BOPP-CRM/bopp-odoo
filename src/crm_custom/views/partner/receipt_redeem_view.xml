@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_partner_receipt_redeem_search" model="ir.ui.view">
+        <field name="name">crm.partner.receipt.redeem.search</field>
+        <field name="model">crm.partner.receipt.redeem</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="receipt_number"/>
+                <field name="user_id"/>
+                <filter name="filter_pending" string="Pending" domain="[('state', '=', 'pending')]"/>
+                <filter name="filter_approved" string="Approved" domain="[('state', '=', 'approved')]"/>
+                <filter name="filter_rejected" string="Rejected" domain="[('state', '=', 'rejected')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_state" string="Status" context="{'group_by': 'state'}"/>
+                    <filter name="group_user" string="User" context="{'group_by': 'user_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_crm_partner_receipt_redeem_partner_list" model="ir.ui.view">
+        <field name="name">crm.partner.receipt.redeem.partner.list</field>
+        <field name="model">crm.partner.receipt.redeem</field>
+        <field name="arch" type="xml">
+            <list decoration-warning="state == 'pending'" decoration-success="state == 'approved'" decoration-danger="state == 'rejected'" create="false" delete="false">
+                <field name="receipt_image_file" widget="image" string="Receipt" options="{'size': [96, 96]}"/>
+                <field name="receipt_image" column_invisible="1"/>
+                <field name="submitted_date"/>
+                <field name="receipt_number"/>
+                <field name="user_id"/>
+                <field name="amount"/>
+                <field name="reward_points"/>
+                <field name="state" widget="badge"
+                    decoration-warning="state == 'pending'"
+                    decoration-success="state == 'approved'"
+                    decoration-danger="state == 'rejected'"/>
+                <field name="reviewed_date" optional="show"/>
+                <field name="reviewed_by_id" optional="hide"/>
+                <field name="reject_reason" optional="hide"/>
+                <field name="partner_id" column_invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_crm_partner_receipt_redeem_list" model="ir.ui.view">
+        <field name="name">crm.partner.receipt.redeem.list</field>
+        <field name="model">crm.partner.receipt.redeem</field>
+        <field name="arch" type="xml">
+            <list decoration-warning="state == 'pending'" decoration-success="state == 'approved'" decoration-danger="state == 'rejected'">
+                <field name="submitted_date"/>
+                <field name="receipt_number"/>
+                <field name="user_id"/>
+                <field name="amount"/>
+                <field name="reward_points"/>
+                <field name="state" widget="badge"
+                    decoration-warning="state == 'pending'"
+                    decoration-success="state == 'approved'"
+                    decoration-danger="state == 'rejected'"/>
+                <field name="partner_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_crm_partner_receipt_redeem_form" model="ir.ui.view">
+        <field name="name">crm.partner.receipt.redeem.form</field>
+        <field name="model">crm.partner.receipt.redeem</field>
+        <field name="arch" type="xml">
+            <form create="false">
+                <header>
+                    <button name="action_approve" string="Approve" type="object" class="btn-primary" invisible="state != 'pending'"/>
+                    <button name="action_reject" string="Reject" type="object" class="btn-secondary" invisible="state != 'pending'"/>
+                    <field name="state" widget="statusbar" statusbar_visible="pending,approved,rejected"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Receipt">
+                            <field name="partner_id" readonly="1"/>
+                            <field name="user_id" readonly="1"/>
+                            <field name="receipt_number" readonly="1"/>
+                            <field name="submitted_date" readonly="1"/>
+                            <field name="user_tier_id" readonly="1"/>
+                            <field name="amount" readonly="state != 'pending'"/>
+                            <field name="tier_convert_points" readonly="1"/>
+                            <field name="reward_points" readonly="1"/>
+                        </group>
+                        <group string="Review">
+                            <field name="reviewed_date" readonly="1"/>
+                            <field name="reviewed_by_id" readonly="1"/>
+                            <field name="reject_reason" readonly="state != 'pending'"/>
+                        </group>
+                    </group>
+                    <group string="Receipt Image">
+                        <field name="receipt_image_file" widget="image" nolabel="1" readonly="1" options="{'size': [320, 320]}"/>
+                        <field name="receipt_image" invisible="1"/>
+                    </group>
+                    <group string="Assigned Points" invisible="state != 'approved'">
+                        <field name="spending_point_id" readonly="1"/>
+                        <field name="reward_point_id" readonly="1"/>
+                    </group>
+                </sheet>
+                <chatter>
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids" options="{'post_refresh': 'recipients'}"/>
+                </chatter>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_crm_partner_receipt_redeem" model="ir.actions.act_window">
+        <field name="name">Receipt Redeem</field>
+        <field name="res_model">crm.partner.receipt.redeem</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_crm_partner_receipt_redeem_search"/>
+        <field name="view_ids" eval="[
+            (5, 0, 0),
+            (0, 0, {'view_mode': 'list', 'view_id': ref('view_crm_partner_receipt_redeem_partner_list')}),
+            (0, 0, {'view_mode': 'form', 'view_id': ref('view_crm_partner_receipt_redeem_form')}),
+        ]"/>
+    </record>
+</odoo>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="module_category_partner_portal" model="ir.module.category">
+        <field name="name">Partner Portal</field>
+        <field name="sequence">50</field>
+    </record>
+
+    <record id="group_partner_portal" model="res.groups">
+        <field name="name">Partner Portal User</field>
+        <field name="category_id" ref="module_category_partner_portal"/>
+        <field name="implied_ids" eval="[(4, ref('base.group_public'))]"/>
+        <field name="comment">Can authenticate via portal API only. Cannot access Odoo backend.</field>
+    </record>
+</odoo>

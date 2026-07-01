@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_partner_list" model="ir.ui.view">
+        <field name="name">crm.user.partner.list</field>
+        <field name="model">crm.user</field>
+        <field name="arch" type="xml">
+            <list delete="0" create="0">
+                <field name="display_name"/>
+                <field name="line_user_id"/>
+                <field name="tier_id"/>
+                <field name="point_balance_display"/>
+                <field name="coupon_count"/>
+                <field name="active_coupon_count"/>
+                <field name="coupon_summary_display"/>
+                <button name="action_open_user" type="object" string="Open" icon="fa-external-link"/>
+                <button name="action_add_point" type="object" string="Add Point" icon="fa-plus"/>
+                <button name="action_add_coupon" type="object" string="Add Coupon" icon="fa-ticket"/>
+            </list>
+        </field>
+    </record>
+</odoo>

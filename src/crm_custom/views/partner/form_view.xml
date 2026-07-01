@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_model_form" model="ir.ui.view">
+        <field name="name">partner.form</field>
+        <field name="model">partner</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_generate_redeem" string="Generate Redeem" type="object" class="btn-primary"/>
+                    <button name="action_generate_coupon" string="Generate Coupon" type="object" class="btn-secondary"/>
+                    <button name="action_open_receipt_redeems" string="Receipt Redeem" type="object" class="btn-secondary" icon="fa-file-image-o"/>
+                    <button name="action_open_warranties" string="Warranty" type="object" class="btn-secondary" icon="fa-shield"/>
+                    <button name="action_add_portal_user" string="Add Portal User" type="object" class="btn-secondary" icon="fa-user-plus"/>
+                </header>
+                <sheet>
+                    <widget name="web_ribbon" title="Archived" bg_color="text-bg-danger" invisible="active"/>
+                    <group>
+                        <group>
+                            <div class="oe_title">
+                                <div class="text-muted" invisible="name == '' or not name">Partner</div>
+                                <h1 invisible="not active or name == '' or not name">
+                                    <field name="name" readonly="1"/>
+                                </h1>
+                                <h1 class="text-decoration-line-through text-muted" invisible="active or name == '' or not name">
+                                    <field name="name" readonly="1"/>
+                                </h1>
+                            </div>
+                        </group>
+                        <group>
+                            <field nolabel="1" name="logo_file" widget="image" class="oe_avatar" options="{'size': [128, 128]}"/>
+                            <field name="logo" invisible="1"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <field name="liff_setup_url" readonly="1"/>
+                    </group>
+
+                    <group>
+                        <group string="General Information">
+                            <field name="name"/>
+                            <field name="slug"/>
+                            <field name="ui_crm_required_phone"/>
+                            <field name="ui_crm_required_email"/>
+                            <field name="portal_manual_receipt_require_image"/>
+                            <field name="ui_warranty_enabled"/>
+                        </group>
+                        <group string="Line Setting">
+                            <field name="partner_line_liff_id"/>
+                            <field name="partner_line_channel_access_token"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Appearance" name="appearance">
+                            <group string="Branding">
+                                <group>
+                                    <field name="ui_banner_file" widget="image" string="Banner" options="{'size': [128, 128]}"/>
+                                    <field name="ui_banner" invisible="1"/>
+                                    <field name="ui_welcome_title"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Background">
+                                    <field name="ui_background_color" placeholder="#FFFFFF"/>
+                                    <field name="ui_background_white_color" placeholder="#FFFFFF"/>
+                                </group>
+                                <group string="Brand Colors">
+                                    <field name="ui_primary_color" placeholder="#000000"/>
+                                    <field name="ui_secondary_color" placeholder="#000000"/>
+                                    <field name="ui_surface_color" placeholder="#000000"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Text Colors">
+                                    <field name="ui_text_color" placeholder="#000000"/>
+                                    <field name="ui_text_white_color" placeholder="#FFFFFF"/>
+                                    <field name="ui_text_gray_color" placeholder="#808080"/>
+                                    <field name="ui_text_success_color" placeholder="#28A745"/>
+                                    <field name="ui_text_error_color" placeholder="#DC3545"/>
+                                </group>
+                                <group string="Button Colors">
+                                    <field name="ui_button_color" placeholder="#000000"/>
+                                    <field name="ui_button_text_color" placeholder="#FFFFFF"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Content" name="content">
+                            <separator string="Custom Fields"/>
+                            <field name="ui_custom_field_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="key"/>
+                                    <field name="value"/>
+                                </list>
+                            </field>
+                            <separator string="Ads"/>
+                            <field name="ads_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="image_file" widget="image" string="Image" options="{'size': [64, 64]}"/>
+                                    <field name="image" column_invisible="1"/>
+                                    <field name="title"/>
+                                    <field name="message"/>
+                                    <field name="action"/>
+                                    <field name="start_date"/>
+                                    <field name="end_date"/>
+                                    <field name="active" widget="boolean_toggle"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Loyalty" name="loyalty">
+                            <notebook>
+                                <page string="Currencies" name="currencies">
+                                    <field name="currency_ids" nolabel="1">
+                                        <list editable="bottom" delete="0">
+                                            <field name="name"/>
+                                            <field name="is_default" widget="boolean_toggle"/>
+                                            <field name="is_total_spending" widget="boolean_toggle"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Tiers" name="tiers">
+                                    <field name="tier_ids" nolabel="1">
+                                        <list editable="bottom">
+                                            <field name="icon_file" widget="image" string="Logo" options="{'size': [48, 48]}"/>
+                                            <field name="icon" column_invisible="1"/>
+                                            <field name="name"/>
+                                            <field name="code"/>
+                                            <field name="color"/>
+                                            <field name="min_spending" string="Min Point"/>
+                                            <field name="max_spending" string="Max Point"/>
+                                            <field name="convert_points"/>
+                                            <field name="is_show_in_ui" widget="boolean_toggle"/>
+                                        </list>
+                                        <form>
+                                            <group>
+                                                <group>
+                                                    <field name="name"/>
+                                                    <field name="code"/>
+                                                    <field name="color"/>
+                                                    <field name="convert_points"/>
+                                                </group>
+                                                <group>
+                                                    <field name="icon_file" widget="image" options="{'size': [128, 128]}"/>
+                                                    <field name="icon" invisible="1"/>
+                                                    <field name="min_spending" string="Min Point"/>
+                                                    <field name="max_spending" string="Max Point"/>
+                                                    <field name="is_show_in_ui"/>
+                                                </group>
+                                            </group>
+                                            <separator string="Promotion Rewards"/>
+                                            <field name="promotion_reward_ids" nolabel="1" context="{'default_event': 'tier_promotion', 'default_partner_id': parent.id, 'default_tier_id': id}">
+                                                <list editable="bottom">
+                                                    <field name="event" column_invisible="1"/>
+                                                    <field name="partner_id" column_invisible="1"/>
+                                                    <field name="tier_id" column_invisible="1"/>
+                                                    <field name="sequence" widget="handle"/>
+                                                    <field name="reward_type"/>
+                                                    <field name="point_value" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
+                                                    <field name="point_currency_id" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
+                                                    <field name="coupon_id" invisible="reward_type != 'coupon'" required="reward_type == 'coupon'"/>
+                                                </list>
+                                            </field>
+                                        </form>
+                                    </field>
+                                </page>
+                                <page string="Member Rewards" name="member_rewards">
+                                    <separator string="New Member Rewards"/>
+                                    <p class="text-muted">กำหนด Point หรือ Coupon ที่จะมอบให้เมื่อมีสมาชิกใหม่สมัครเข้าร่วม</p>
+                                    <field name="join_reward_ids" nolabel="1" context="{'default_event': 'join', 'default_partner_id': id}">
+                                        <list editable="bottom">
+                                            <field name="event" column_invisible="1"/>
+                                            <field name="partner_id" column_invisible="1"/>
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="reward_type"/>
+                                            <field name="point_value" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
+                                            <field name="point_currency_id" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
+                                            <field name="coupon_id" invisible="reward_type != 'coupon'" required="reward_type == 'coupon'"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Redeem QR" name="redeem_qr">
+                                    <field name="point_redeem_ids" nolabel="1">
+                                        <list delete="0">
+                                            <field name="name"/>
+                                            <field name="currency_id"/>
+                                            <field name="value"/>
+                                            <field name="type"/>
+                                            <field name="reward_coupon_id" optional="show"/>
+                                            <field name="expiration_date"/>
+                                            <field name="active" widget="boolean_toggle"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Receipts" name="receipts">
+                                    <field name="receipt_redeem_ids" nolabel="1">
+                                        <list delete="0" create="0">
+                                            <field name="submitted_date"/>
+                                            <field name="receipt_number"/>
+                                            <field name="user_id"/>
+                                            <field name="amount"/>
+                                            <field name="reward_points"/>
+                                            <field name="state" widget="badge"
+                                                decoration-warning="state == 'pending'"
+                                                decoration-success="state == 'approved'"
+                                                decoration-danger="state == 'rejected'"/>
+                                        </list>
+                                    </field>
+                                </page>
+                            </notebook>
+                        </page>
+
+                        <page string="Members" name="members">
+                            <group>
+                                <field name="user_search" string="Search" placeholder="ค้นหาชื่อ, LINE ID, email, เบอร์โทร..."/>
+                            </group>
+                            <field name="filtered_user_ids" nolabel="1">
+                                <list delete="0" create="0">
+                                    <field name="display_name"/>
+                                    <field name="line_user_id" optional="show"/>
+                                    <field name="tier_id"/>
+                                    <button name="action_open_user" type="object" string="Open" icon="fa-external-link"/>
+                                    <button name="action_add_point" type="object" string="Point" icon="fa-plus"/>
+                                    <button name="action_add_coupon" type="object" string="Coupon" icon="fa-ticket"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Portal Users" name="portal_users">
+                            <group string="API Settings">
+                                <field name="api_monthly_limit"/>
+                                <field name="api_usage_current_month" readonly="1"/>
+                            </group>
+                            <field name="api_usage_ids" nolabel="1" readonly="1">
+                                <list create="0" delete="0" edit="0">
+                                    <field name="month"/>
+                                    <field name="request_count"/>
+                                </list>
+                            </field>
+                            <field name="portal_user_ids" nolabel="1">
+                                <list create="0" delete="0">
+                                    <field name="name"/>
+                                    <field name="email" string="Email"/>
+                                    <field name="portal_role"/>
+                                    <field name="login" column_invisible="1"/>
+                                    <field name="active" widget="boolean"/>
+                                    <field name="api_key_enabled" widget="boolean"/>
+                                    <field name="has_api_key" column_invisible="1"/>
+                                    <field name="is_partner_portal" column_invisible="1"/>
+                                    <button name="action_generate_portal_api_key" type="object" string="Generate API Key" icon="fa-key" invisible="has_api_key"/>
+                                    <button name="action_rotate_portal_api_key" type="object" string="Rotate API Key" icon="fa-refresh" invisible="not has_api_key"/>
+                                    <button name="action_enable_portal_api_key" type="object" string="Enable API Key" icon="fa-toggle-off" invisible="not has_api_key or api_key_enabled"/>
+                                    <button name="action_disable_portal_api_key" type="object" string="Disable API Key" icon="fa-toggle-on" invisible="not has_api_key or not api_key_enabled"/>
+                                </list>
+                            </field>
+                        </page>
+
+                        <page string="Warranty" name="warranty" invisible="not ui_warranty_enabled">
+                            <notebook>
+                                <page string="Registrations" name="warranty_registrations">
+                                    <field name="warranty_ids" nolabel="1">
+                                        <list delete="0" create="0">
+                                            <field name="submitted_date"/>
+                                            <field name="user_id"/>
+                                            <field name="product_id"/>
+                                            <field name="serial_number"/>
+                                            <field name="receipt_number"/>
+                                            <field name="contributor_id"/>
+                                            <field name="purchase_date"/>
+                                            <field name="status_id"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Products" name="warranty_products">
+                                    <field name="warranty_product_ids" nolabel="1">
+                                        <list editable="bottom">
+                                            <field name="image_file" widget="image" string="Image" options="{'size': [64, 64]}"/>
+                                            <field name="image" column_invisible="1"/>
+                                            <field name="name"/>
+                                            <field name="sku"/>
+                                            <field name="description"/>
+                                            <field name="cost_price"/>
+                                            <field name="sell_price"/>
+                                            <field name="active" widget="boolean_toggle"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Purchase Channels" name="warranty_contributors">
+                                    <field name="warranty_contributor_ids" nolabel="1">
+                                        <list editable="bottom">
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="name"/>
+                                            <field name="active" widget="boolean_toggle"/>
+                                        </list>
+                                    </field>
+                                </page>
+                                <page string="Statuses" name="warranty_statuses">
+                                    <p class="text-muted">กำหนดสถานะและ label ที่แสดงใน Portal และแอปสมาชิก</p>
+                                    <field name="warranty_status_ids" nolabel="1">
+                                        <list editable="bottom">
+                                            <field name="sequence" widget="handle"/>
+                                            <field name="code"/>
+                                            <field name="label"/>
+                                            <field name="color" placeholder="#FFC107"/>
+                                            <field name="is_default" widget="boolean_toggle"/>
+                                            <field name="active" widget="boolean_toggle"/>
+                                        </list>
+                                    </field>
+                                </page>
+                            </notebook>
+                        </page>
+
+                        <page string="Coupons" name="coupons">
+                            <field name="coupon_ids" nolabel="1">
+                                <list delete="0" create="0">
+                                    <field name="name"/>
+                                    <field name="currency_id"/>
+                                    <field name="value"/>
+                                    <field name="is_show_in_ui" widget="boolean_toggle"/>
+                                    <field name="max_redeem_per_user" string="Max/User" optional="show"/>
+                                    <field name="available_code_count" string="Available"/>
+                                    <field name="redeemed_count" string="Redeemed" optional="hide"/>
+                                    <field name="code_source" optional="hide"/>
+                                    <field name="total_code_count" optional="hide"/>
+                                    <field name="start_time"/>
+                                    <field name="end_time" optional="hide"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter>
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids" options="{'post_refresh': 'recipients'}"/>
+                </chatter>
+            </form>
+        </field>
+    </record>
+</odoo>

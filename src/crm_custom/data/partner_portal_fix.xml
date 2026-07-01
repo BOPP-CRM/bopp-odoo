@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <function model="res.users" name="fix_partner_portal_groups"/>
+    <function model="res.users" name="migrate_portal_user_logins"/>
+    <function model="res.users" name="migrate_portal_user_roles"/>
+</odoo>

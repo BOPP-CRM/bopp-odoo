@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_point_form" model="ir.ui.view">
+        <field name="name">crm.user.point.form</field>
+        <field name="model">crm.user.point</field>
+        <field name="arch" type="xml">
+            <form create="false" edit="false" delete="false">
+                <sheet>
+                    <div class="oe_title">
+                        <div class="text-muted">Point Transaction</div>
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Transaction">
+                            <field name="user_id" readonly="1"/>
+                            <field name="currency_id" readonly="1"/>
+                            <field name="type" readonly="1"/>
+                            <field name="value" readonly="1"/>
+                        </group>
+                        <group string="Dates">
+                            <field name="given_date" readonly="1"/>
+                            <field name="expiration_date" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Admin Note" invisible="not admin_note">
+                        <field name="admin_note" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_crm_user_coupon_form" model="ir.ui.view">
+        <field name="name">crm.user.coupon.form</field>
+        <field name="model">crm.user.coupon</field>
+        <field name="arch" type="xml">
+            <form create="false" edit="false" delete="false">
+                <sheet>
+                    <widget name="web_ribbon" title="Used" bg_color="text-bg-secondary" invisible="not is_used"/>
+                    <widget name="web_ribbon" title="Active" bg_color="text-bg-success" invisible="is_used"/>
+                    <div class="oe_title">
+                        <div class="text-muted">User Coupon</div>
+                        <h1>
+                            <field name="name" readonly="1"/>
+                        </h1>
+                        <h3>
+                            <field name="code" readonly="1"/>
+                        </h3>
+                    </div>
+                    <group>
+                        <group string="Coupon">
+                            <field name="user_id" readonly="1"/>
+                            <field name="coupon_id" readonly="1"/>
+                            <field name="currency_id" readonly="1"/>
+                            <field name="value" readonly="1"/>
+                            <field name="is_used" readonly="1"/>
+                            <field name="state" readonly="1"/>
+                        </group>
+                        <group string="Dates">
+                            <field name="acquired_date" readonly="1"/>
+                            <field name="activated_date" readonly="1"/>
+                            <field name="expiration_date" readonly="1"/>
+                            <field name="used_date" readonly="1" invisible="not is_used"/>
+                        </group>
+                    </group>
+                    <group string="Admin Note" invisible="not admin_note">
+                        <field name="admin_note" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

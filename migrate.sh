@@ -1,0 +1,1 @@
+docker compose exec -T odoo bash -lc "odoo -d odoo -u crm_custom --stop-after-init -c /etc/odoo/odoo.conf --http-port=8061 --gevent-port=8073"

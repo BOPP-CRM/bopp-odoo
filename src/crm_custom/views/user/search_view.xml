@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_search" model="ir.ui.view">
+        <field name="name">crm.user.search</field>
+        <field name="model">crm.user</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="display_name"/>
+                <field name="line_user_id"/>
+                <field name="email"/>
+                <field name="phone"/>
+                <field name="partner_id"/>
+                <filter string="Active" name="active" domain="[('active', '=', True)]"/>
+                <filter string="Archived" name="archived" domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Partner" name="group_partner" context="{'group_by': 'partner_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>

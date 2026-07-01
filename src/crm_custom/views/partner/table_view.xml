@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_model_list" model="ir.ui.view">
+        <field name="name">partner.list</field>
+        <field name="model">partner</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="logo_file" widget="image" string="Logo" options="{'size': [60, 60]}"/>
+                <field name="logo" column_invisible="1"/>
+                <field name="name"/>
+                <field name="slug"/>
+            </list>
+        </field>
+    </record>
+</odoo>

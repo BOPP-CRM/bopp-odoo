@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_user_point_redeem_model_list" model="ir.ui.view">
+        <field name="name">crm.partner.point.redeem.list</field>
+        <field name="model">crm.partner.point.redeem</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="partner_id"/>
+                <field name="name"/>
+                <field name="currency_id"/>
+                <field name="value"/>
+                <field name="type"/>
+                <field name="reward_coupon_id" optional="show"/>
+                <field name="limit_per_user"/>
+                <field name="limit_per_qr"/>
+                <field name="redeemed_count"/>
+                <field name="expiration_date"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_crm_user_point_redeem_model_form" model="ir.ui.view">
+        <field name="name">crm.partner.point.redeem.form</field>
+        <field name="model">crm.partner.point.redeem</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="active"/>
+                    <div class="oe_title">
+                        <div class="text-muted">Redeem QR</div>
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group string="Redeem">
+                            <field name="partner_id" readonly="1"/>
+                            <field name="currency_id" domain="[('partner_id', '=', partner_id)]"/>
+                            <field name="value"/>
+                            <field name="type"/>
+                            <field name="active"/>
+                        </group>
+                        <group string="Limits">
+                            <field name="limit_per_user"/>
+                            <field name="limit_per_qr"/>
+                            <field name="redeemed_count"/>
+                            <field name="expiration_date"/>
+                            <field name="reward_coupon_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="code" readonly="1"/>
+                        <field name="redeem_url" readonly="1"/>
+                        <field name="qr_code_preview" widget="html" nolabel="1" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Redeemed Users">
+                            <field name="point_ids" readonly="1" nolabel="1">
+                                <list>
+                                    <field name="user_id"/>
+                                    <field name="currency_id"/>
+                                    <field name="value"/>
+                                    <field name="type"/>
+                                    <field name="given_date"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Reward Coupons">
+                            <field name="user_coupon_ids" readonly="1" nolabel="1">
+                                <list>
+                                    <field name="user_id"/>
+                                    <field name="code"/>
+                                    <field name="coupon_id"/>
+                                    <field name="acquired_date"/>
+                                    <field name="is_used"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter>
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids" options="{'post_refresh': 'recipients'}"/>
+                </chatter>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_crm_user_point_redeem_model" model="ir.actions.act_window">
+        <field name="name">Point Redeem</field>
+        <field name="res_model">crm.partner.point.redeem</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

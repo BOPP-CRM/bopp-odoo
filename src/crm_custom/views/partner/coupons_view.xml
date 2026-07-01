@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_coupon_form" model="ir.ui.view">
+        <field name="name">partner.coupon.form</field>
+        <field name="model">partner.coupon</field>
+        <field name="arch" type="xml">
+            <form create="false">
+                <header>
+                    <button name="action_export_codes" string="Export Codes" type="object" class="btn-secondary"/>
+                    <button name="action_add_codes" string="Add Codes" type="object" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id" readonly="1"/>
+                            <field name="name"/>
+                            <field name="currency_id" domain="[('partner_id', '=', partner_id)]"/>
+                            <field name="value"/>
+                            <field name="code_source" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="image_file" widget="image" string="Image" options="{'size': [128, 128]}"/>
+                            <field name="image" invisible="1"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="term_and_condition"/>
+                    </group>
+                    <group string="Code Settings" invisible="code_source != 'generate'">
+                        <field name="prefix_code" readonly="1"/>
+                        <field name="random_range" readonly="1"/>
+                        <field name="suffix_code" readonly="1"/>
+                        <field name="locked_random_range" readonly="1"/>
+                    </group>
+                    <group string="Code Summary">
+                        <field name="total_code_count" readonly="1"/>
+                        <field name="available_code_count" readonly="1"/>
+                        <field name="redeemed_count" readonly="1"/>
+                        <field name="used_code_count" readonly="1"/>
+                    </group>
+                    <group string="Availability">
+                        <field name="start_time"/>
+                        <field name="code_expiry_interval"/>
+                        <field name="end_time"/>
+                        <field name="is_show_in_ui" widget="boolean_toggle"/>
+                        <field name="max_redeem_per_user"/>
+                    </group>
+                    <notebook>
+                        <page string="Coupon Codes">
+                            <field name="coupon_code_ids" nolabel="1" readonly="1">
+                                <list>
+                                    <field name="code"/>
+                                    <field name="state"/>
+                                    <field name="redeemed_by_user_id"/>
+                                    <field name="redeemed_date"/>
+                                    <field name="used_by_user_id"/>
+                                    <field name="used_date"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Redeemed Users">
+                            <field name="user_coupon_ids" nolabel="1" readonly="1">
+                                <list>
+                                    <field name="code"/>
+                                    <field name="user_id"/>
+                                    <field name="acquired_date"/>
+                                    <field name="expiration_date"/>
+                                    <field name="is_used"/>
+                                    <field name="used_date"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+                <chatter>
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids" options="{'post_refresh': 'recipients'}"/>
+                </chatter>
+            </form>
+        </field>
+    </record>
+</odoo>
