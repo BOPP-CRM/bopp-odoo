@@ -192,14 +192,16 @@ class OTP(models.Model):
 
         response = requests.post(url, json=payload, headers=headers)
 
-        if response.status_code != 200 or response.status_code != 201:
+        if response.status_code not in (200, 201):
             self.make_as_fail(f"failed to send sms otp: {response.text}")
             return False
 
+        response_data = response.json()
         self.make_as_send(response.text)
         return {
-            "ref": response.json().get("ref", False),
-            "transaction_id": response.json().get("transaction_id", False)
+            "ref": response_data.get("ref", False),
+            "transaction_id": response_data.get("transactionId")
+            or response_data.get("transaction_id", False),
         }
 
     def verify_sms_otp(self, otp_code):

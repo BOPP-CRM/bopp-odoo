@@ -13,6 +13,8 @@
                         <field name="otp" readonly="1"/>
                         <field name="ref" readonly="1"/>
                         <field name="expiry"/>
+                        <field name="is_sent" readonly="1"/>
+                        <field name="reason" readonly="1"/>
                     </group>
                 </sheet>
             </form>
