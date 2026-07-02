@@ -15,7 +15,7 @@ class ReceiptRedeemController(http.Controller):
         if user_response["error"]:
             return user_response["error"]
 
-        receipt_number, image_data, parse_error = self._parse_submit_payload()
+        receipt_number, amount, image_data, parse_error = self._parse_submit_payload()
         if parse_error:
             return parse_error
 
@@ -25,6 +25,7 @@ class ReceiptRedeemController(http.Controller):
                 user_response["user"],
                 receipt_number,
                 image_data,
+                amount=amount,
             )
         except ValidationError as error:
             request.env.cr.rollback()
@@ -73,6 +74,12 @@ class ReceiptRedeemController(http.Controller):
             "receipt": self._serialize_receipt(receipt),
         })
 
+    def _parse_amount(self, raw_amount):
+        try:
+            return float(raw_amount or 0)
+        except (TypeError, ValueError):
+            return None
+
     def _parse_submit_payload(self):
         upload = request.httprequest.files
         if upload:
@@ -80,26 +87,45 @@ class ReceiptRedeemController(http.Controller):
                 request.httprequest.form.get("receiptNumber")
                 or request.httprequest.form.get("receipt_number")
             )
+            amount_raw = (
+                request.httprequest.form.get("amount")
+                or request.httprequest.form.get("receiptAmount")
+            )
             image_file = upload.get("receiptImage") or upload.get("receipt_image")
             if not image_file:
-                return None, None, json_response(
+                return None, None, None, json_response(
                     {"error": "invalid_request", "message": "กรุณาอัปโหลดรูปใบเสร็จ"},
                     status=400,
                 )
 
-            return receipt_number, base64.b64encode(image_file.read()), None
+            amount = self._parse_amount(amount_raw)
+            if amount is None:
+                return None, None, None, json_response(
+                    {"error": "invalid_request", "message": "มูลค่าสินค้าไม่ถูกต้อง"},
+                    status=400,
+                )
+
+            return receipt_number, amount, base64.b64encode(image_file.read()), None
 
         try:
             payload = json.loads(request.httprequest.get_data(as_text=True) or "{}")
         except json.JSONDecodeError:
-            return None, None, json_response(
+            return None, None, None, json_response(
                 {"error": "invalid_json", "message": "Invalid JSON body."},
                 status=400,
             )
 
         receipt_number = payload.get("receiptNumber") or payload.get("receipt_number")
+        amount_raw = payload.get("amount") or payload.get("receiptAmount")
+        amount = self._parse_amount(amount_raw)
+        if amount is None:
+            return None, None, None, json_response(
+                {"error": "invalid_request", "message": "มูลค่าสินค้าไม่ถูกต้อง"},
+                status=400,
+            )
+
         image_data = payload.get("receiptImage") or payload.get("receipt_image")
-        return receipt_number, image_data, None
+        return receipt_number, amount, image_data, None
 
     def _get_user(self, slug, user_id):
         partner = request.env["partner"].sudo().search([("slug", "=", slug)], limit=1)

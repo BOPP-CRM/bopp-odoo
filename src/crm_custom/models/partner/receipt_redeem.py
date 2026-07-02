@@ -344,12 +344,16 @@ class PartnerReceiptRedeem(models.Model):
         })
 
     @api.model
-    def submit_receipt(self, partner, user, receipt_number, image_data):
+    def submit_receipt(self, partner, user, receipt_number, image_data, amount=None):
         receipt_number = (receipt_number or "").strip()
         if not receipt_number:
             raise ValidationError("กรุณาระบุเลขที่ใบเสร็จ")
         if not image_data:
             raise ValidationError("กรุณาอัปโหลดรูปใบเสร็จ")
+
+        amount = float(amount or 0)
+        if amount < 0:
+            raise ValidationError("กรุณาระบุมูลค่าสินค้าไม่น้อยกว่า 0")
 
         duplicate = self.search([
             ("partner_id", "=", partner.id),
@@ -364,11 +368,15 @@ class PartnerReceiptRedeem(models.Model):
             image_data,
         )
 
-        return self.create({
+        receipt = self.create({
             "receipt_number": receipt_number,
             "receipt_image": receipt_image_url,
             "partner_id": partner.id,
             "user_id": user.id,
+            "amount": amount,
             "submitted_date": fields.Datetime.now(),
             "state": "pending",
         })
+        if amount > 0:
+            receipt._refresh_reward_preview(save=True)
+        return receipt
