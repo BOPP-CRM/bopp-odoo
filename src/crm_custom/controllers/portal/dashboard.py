@@ -43,7 +43,7 @@ class PortalDashboardController(http.Controller):
             "members_by_tier": self._get_members_by_tier(partner),
             "new_members_today": self._count_users_in_range(partner, today_from, today_to),
             "user_registrations": self._get_user_registrations(partner, date_from, date_to, granularity),
-            "user_registrations_by_hour": self._get_user_registrations_by_hour(partner, today_from, today_to),
+            "user_registrations_by_hour": self._get_user_registrations_by_hour(partner, date_from, date_to),
             "receipt_amounts": self._get_receipt_amounts(partner, date_from, date_to, granularity),
             "coupons_by_name": self._get_coupons_by_name(partner, date_from, date_to),
             "points": self._get_points_summary(partner, date_from, date_to, granularity),
@@ -155,9 +155,12 @@ class PortalDashboardController(http.Controller):
 
     def _get_today_utc_range(self):
         now_th = self._to_thailand_time(fields.Datetime.now())
-        today_start_th = now_th.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end_th = now_th.replace(hour=23, minute=59, second=59, microsecond=0)
-        return today_start_th - THAILAND_OFFSET, today_end_th - THAILAND_OFFSET
+        return self._day_to_utc_range(now_th.date())
+
+    def _day_to_utc_range(self, day):
+        day_start_th = datetime.combine(day, time.min)
+        day_end_th = datetime.combine(day, time(23, 59, 59))
+        return day_start_th - THAILAND_OFFSET, day_end_th - THAILAND_OFFSET
 
     def _search_users_in_range(self, partner, date_from, date_to):
         return request.env["crm.user"].sudo().search([
