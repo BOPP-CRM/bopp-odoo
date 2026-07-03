@@ -34,13 +34,16 @@ class PortalDashboardController(http.Controller):
         date_from = date_range["date_from"]
         date_to = date_range["date_to"]
 
+        today_from, today_to = self._get_today_utc_range()
+
         return json_response({
             "date_from": fields.Datetime.to_string(self._to_thailand_time(date_from)),
             "date_to": fields.Datetime.to_string(self._to_thailand_time(date_to)),
             "granularity": granularity,
             "members_by_tier": self._get_members_by_tier(partner),
+            "new_members_today": self._count_users_in_range(partner, today_from, today_to),
             "user_registrations": self._get_user_registrations(partner, date_from, date_to, granularity),
-            "user_registrations_by_hour": self._get_user_registrations_by_hour(partner, date_from, date_to),
+            "user_registrations_by_hour": self._get_user_registrations_by_hour(partner, today_from, today_to),
             "receipt_amounts": self._get_receipt_amounts(partner, date_from, date_to, granularity),
             "coupons_by_name": self._get_coupons_by_name(partner, date_from, date_to),
             "points": self._get_points_summary(partner, date_from, date_to, granularity),
@@ -103,7 +106,8 @@ class PortalDashboardController(http.Controller):
                 time(23, 59, 59) if end_of_day else time.min,
             )
         else:
-            local_dt = parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+            # Full datetime strings from the portal are already UTC.
+            return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
 
         return local_dt - THAILAND_OFFSET
 
@@ -149,12 +153,22 @@ class PortalDashboardController(http.Controller):
 
         return results
 
+    def _get_today_utc_range(self):
+        now_th = self._to_thailand_time(fields.Datetime.now())
+        today_start_th = now_th.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end_th = now_th.replace(hour=23, minute=59, second=59, microsecond=0)
+        return today_start_th - THAILAND_OFFSET, today_end_th - THAILAND_OFFSET
+
     def _search_users_in_range(self, partner, date_from, date_to):
         return request.env["crm.user"].sudo().search([
             ("partner_id", "=", partner.id),
+            ("active", "=", True),
             ("create_date", ">=", date_from),
             ("create_date", "<=", date_to),
         ])
+
+    def _count_users_in_range(self, partner, date_from, date_to):
+        return self._search_users_in_range(partner, date_from, date_to).__len__()
 
     def _get_user_registrations(self, partner, date_from, date_to, granularity):
         counts = defaultdict(int)
