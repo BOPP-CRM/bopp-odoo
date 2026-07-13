@@ -163,22 +163,51 @@ class PartnerReceiptRedeem(models.Model):
             )
         return result
 
+    @api.model
+    def _find_duplicate_receipt_number(self, partner, receipt_number, exclude_id=None):
+        receipt_number = (receipt_number or "").strip()
+        if not receipt_number:
+            return self.browse()
+
+        domain = [
+            ("partner_id", "=", partner.id),
+            ("receipt_number", "=ilike", receipt_number),
+            ("state", "!=", "rejected"),
+        ]
+        if exclude_id:
+            domain.append(("id", "!=", exclude_id))
+        return self.search(domain, limit=1)
+
+    @api.model
+    def validate_receipt_number_available(self, partner, receipt_number, exclude_receipt_id=None):
+        duplicate = self._find_duplicate_receipt_number(
+            partner,
+            receipt_number,
+            exclude_receipt_id,
+        )
+        if not duplicate:
+            return
+
+        normalized_number = (receipt_number or "").strip()
+        if duplicate.state == "approved":
+            raise ValidationError(
+                f"เลขที่ใบเสร็จ '{normalized_number}' ตรงกับใบเสร็จที่อนุมัติไปแล้ว"
+            )
+        raise ValidationError(
+            f"เลขที่ใบเสร็จ '{normalized_number}' ถูกใช้งานแล้ว"
+        )
+
     @api.constrains("receipt_number", "partner_id", "state")
     def _check_unique_receipt_number(self):
         for record in self:
             if record.state == "rejected" or not record.receipt_number:
                 continue
 
-            duplicate = self.search([
-                ("partner_id", "=", record.partner_id.id),
-                ("receipt_number", "=", record.receipt_number),
-                ("state", "!=", "rejected"),
-                ("id", "!=", record.id),
-            ], limit=1)
-            if duplicate:
-                raise ValidationError(
-                    f"เลขที่ใบเสร็จ '{record.receipt_number}' ถูกใช้งานแล้ว"
-                )
+            self.validate_receipt_number_available(
+                record.partner_id,
+                record.receipt_number,
+                record.id,
+            )
 
     @api.constrains("user_id", "partner_id")
     def _check_user_partner(self):
@@ -209,6 +238,12 @@ class PartnerReceiptRedeem(models.Model):
 
         if self.amount <= 0:
             raise ValidationError("กรุณาระบุมูลค่าสินค้ามากกว่า 0")
+
+        self.validate_receipt_number_available(
+            self.partner_id,
+            self.receipt_number,
+            self.id,
+        )
 
         spending_currency = self._get_spending_currency()
         default_currency = self._get_default_currency()
@@ -355,13 +390,7 @@ class PartnerReceiptRedeem(models.Model):
         if amount < 0:
             raise ValidationError("กรุณาระบุมูลค่าสินค้าไม่น้อยกว่า 0")
 
-        duplicate = self.search([
-            ("partner_id", "=", partner.id),
-            ("receipt_number", "=", receipt_number),
-            ("state", "!=", "rejected"),
-        ], limit=1)
-        if duplicate:
-            raise ValidationError(f"เลขที่ใบเสร็จ '{receipt_number}' ถูกใช้งานแล้ว")
+        self.validate_receipt_number_available(partner, receipt_number)
 
         receipt_image_url = self._upload_image_field(
             "receipt_image",
