@@ -134,6 +134,42 @@ class PortalReceiptsController(http.Controller):
             "receipt": self._serialize_receipt(receipt),
         }, status=201)
 
+    @http.route("/api/portal/receipts/validate-number", type="http", auth="public", methods=["GET"], csrf=False, cors="*")
+    def validate_receipt_number(self, **kwargs):
+        portal_user, auth_error = get_authenticated_portal_user()
+        if auth_error:
+            return auth_error
+
+        receipt_number = (
+            kwargs.get("receipt_number")
+            or kwargs.get("receiptNumber")
+            or ""
+        ).strip()
+        if not receipt_number:
+            return json_response(
+                {"error": "invalid_request", "message": "กรุณาระบุเลขที่ใบเสร็จ"},
+                status=400,
+            )
+
+        partner = portal_user.crm_partner_id
+        exclude_id = self._parse_int(
+            kwargs.get("exclude_id") or kwargs.get("excludeId")
+        )
+        receipt_model = request.env["crm.partner.receipt.redeem"].sudo()
+        try:
+            receipt_model.validate_receipt_number_available(
+                partner,
+                receipt_number,
+                exclude_id,
+            )
+        except ValidationError as error:
+            return json_response({
+                "available": False,
+                "message": str(error),
+            })
+
+        return json_response({"available": True})
+
     @http.route("/api/portal/receipts/<int:receipt_id>", type="http", auth="public", methods=["GET"], csrf=False, cors="*")
     def get_receipt(self, receipt_id, **kwargs):
         portal_user, auth_error = get_authenticated_portal_user()
@@ -172,9 +208,29 @@ class PortalReceiptsController(http.Controller):
                 status=400,
             )
 
+        receipt_model = request.env["crm.partner.receipt.redeem"].sudo()
         vals = {}
         if "amount" in payload:
             vals["amount"] = payload["amount"]
+        if "receipt_number" in payload:
+            receipt_number = (payload.get("receipt_number") or "").strip()
+            if not receipt_number:
+                return json_response(
+                    {"error": "invalid_request", "message": "กรุณาระบุเลขที่ใบเสร็จ"},
+                    status=400,
+                )
+            try:
+                receipt_model.validate_receipt_number_available(
+                    portal_user.crm_partner_id,
+                    receipt_number,
+                    receipt.id,
+                )
+            except ValidationError as error:
+                return json_response(
+                    {"error": "receipt_not_allowed", "message": str(error)},
+                    status=400,
+                )
+            vals["receipt_number"] = receipt_number
         if "reject_reason" in payload:
             vals["reject_reason"] = payload["reject_reason"]
 
@@ -212,11 +268,33 @@ class PortalReceiptsController(http.Controller):
             return parse_error
 
         receipt = receipt_response["receipt"]
+        receipt_model = request.env["crm.partner.receipt.redeem"].sudo()
         try:
+            approve_vals = {}
             if "amount" in payload:
                 if receipt.state != "pending":
                     raise ValidationError("แก้ไขมูลค่าได้เฉพาะรายการที่รอตรวจสอบ")
-                receipt.sudo().write({"amount": payload["amount"]})
+                approve_vals["amount"] = payload["amount"]
+            if "receipt_number" in payload:
+                if receipt.state != "pending":
+                    raise ValidationError("แก้ไขเลขที่ใบเสร็จได้เฉพาะรายการที่รอตรวจสอบ")
+                receipt_number = (payload.get("receipt_number") or "").strip()
+                if not receipt_number:
+                    raise ValidationError("กรุณาระบุเลขที่ใบเสร็จ")
+                receipt_model.validate_receipt_number_available(
+                    portal_user.crm_partner_id,
+                    receipt_number,
+                    receipt.id,
+                )
+                approve_vals["receipt_number"] = receipt_number
+            elif receipt.state == "pending":
+                receipt_model.validate_receipt_number_available(
+                    portal_user.crm_partner_id,
+                    receipt.receipt_number,
+                    receipt.id,
+                )
+            if approve_vals:
+                receipt.sudo().write(approve_vals)
 
             receipt.with_user(portal_user).sudo().action_approve()
         except ValidationError as error:
