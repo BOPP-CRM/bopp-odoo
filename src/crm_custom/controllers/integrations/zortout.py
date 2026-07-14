@@ -34,10 +34,10 @@ class ZortoutWebhookController(http.Controller):
         if not partner.validate_zortout_request_headers(headers):
             request.env["partner.zortout.webhook.log"].sudo().log_request(
                 partner,
-                method or "UNKNOWN",
+                method or "VERIFY",
                 http_status=401,
                 result={"status": "unauthorized"},
-                message="Invalid webhook keys.",
+                message="Invalid webhook keys. ตรวจสอบว่า key1 ใน ZORT ตรงกับที่แสดงใน Portal",
             )
             return json_response(
                 {"error": "unauthorized", "message": "Invalid webhook keys."},

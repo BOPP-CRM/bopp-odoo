@@ -142,10 +142,15 @@ class PartnerZortoutIntegration(models.Model):
 
         if not key1 or key1 != (self.zortout_key1 or ""):
             return False
-        if self.zortout_key2 and _get_header("key2") != self.zortout_key2:
+
+        incoming_key2 = _get_header("key2")
+        if incoming_key2 and self.zortout_key2 and incoming_key2 != self.zortout_key2:
             return False
-        if self.zortout_key3 and _get_header("key3") != self.zortout_key3:
+
+        incoming_key3 = _get_header("key3")
+        if incoming_key3 and self.zortout_key3 and incoming_key3 != self.zortout_key3:
             return False
+
         return True
 
     @api.model
