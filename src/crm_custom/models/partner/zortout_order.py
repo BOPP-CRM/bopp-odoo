@@ -160,8 +160,8 @@ class PartnerZortoutOrder(models.Model):
         order_label = self.order_number or str(self.zortout_order_id)
 
         spending_point = self.env["crm.user.point"].create({
-            "name": f"คะแนนจาก Zortout {order_label}",
-            "admin_note": f"Zortout order #{order_label} paid",
+            "name": f"คะแนนจาก {order_label}",
+            "admin_note": f"Order #{order_label} paid",
             "value": self.amount,
             "type": "earn",
             "given_date": now,
@@ -172,9 +172,9 @@ class PartnerZortoutOrder(models.Model):
         reward_point = False
         if reward_value > 0:
             reward_point = self.env["crm.user.point"].create({
-                "name": f"คะแนนจาก Zortout {order_label}",
+                "name": f"คะแนนจาก {order_label}",
                 "admin_note": (
-                    f"Zortout order #{order_label} "
+                    f"Order #{order_label} "
                     f"({self.amount:g} / {convert_points:g} = {reward_value:g} points)"
                 ),
                 "value": reward_value,

@@ -62,7 +62,6 @@ class PartnerZortoutWebhookLog(models.Model):
         except (TypeError, ValueError):
             amount = 0.0
 
-        reward_points = 0.0
         return {
             "zortout_order_id": zortout_order_id or False,
             "order_number": payload.get("number") or False,
@@ -72,7 +71,6 @@ class PartnerZortoutWebhookLog(models.Model):
             "customer_name": payload.get("customername") or False,
             "customer_phone": payload.get("customerphone") or False,
             "customer_email": payload.get("customeremail") or False,
-            "reward_points": reward_points,
         }
 
     @api.model
@@ -120,11 +118,11 @@ class PartnerZortoutWebhookLog(models.Model):
             "result_status": result_status,
             "message": message or False,
             "warning": warning or False,
-            "points_awarded": points_awarded,
-            "reward_points": reward_points,
             "user_id": user.id if user else False,
             "zortout_order_record_id": order_record.id if order_record else False,
             **payload_fields,
+            "points_awarded": points_awarded,
+            "reward_points": reward_points,
         })
 
     @api.model
@@ -150,6 +148,10 @@ class PartnerZortoutWebhookLog(models.Model):
                 "email": self.user_id.email or False,
             }
 
+        reward_points = self.reward_points or 0
+        if self.points_awarded and not reward_points and self.zortout_order_record_id:
+            reward_points = self.zortout_order_record_id.reward_points or 0
+
         return {
             "id": self.id,
             "received_at": fields.Datetime.to_string(self.received_at),
@@ -167,6 +169,6 @@ class PartnerZortoutWebhookLog(models.Model):
             "customer_phone": self.customer_phone or False,
             "customer_email": self.customer_email or False,
             "points_awarded": bool(self.points_awarded),
-            "reward_points": self.reward_points or 0,
+            "reward_points": reward_points,
             "member": member,
         }
