@@ -29,21 +29,46 @@ class ZortoutWebhookController(http.Controller):
             )
 
         headers = request.httprequest.headers
+        method = (kwargs.get("method") or request.params.get("method") or "").strip().upper()
+
         if not partner.validate_zortout_request_headers(headers):
+            request.env["partner.zortout.webhook.log"].sudo().log_request(
+                partner,
+                method or "UNKNOWN",
+                http_status=401,
+                result={"status": "unauthorized"},
+                message="Invalid webhook keys.",
+            )
             return json_response(
                 {"error": "unauthorized", "message": "Invalid webhook keys."},
                 status=401,
             )
 
-        method = (kwargs.get("method") or request.params.get("method") or "").strip().upper()
         if method not in SUPPORTED_METHODS:
+            request.env["partner.zortout.webhook.log"].sudo().log_request(
+                partner,
+                method or "UNKNOWN",
+                http_status=400,
+                result={"status": "bad_request", "reason": "unsupported_method"},
+                message="Unsupported webhook method.",
+            )
             return json_response(
                 {"error": "bad_request", "message": "Unsupported webhook method."},
                 status=400,
             )
 
         payload = self._extract_payload(kwargs)
+        log_model = request.env["partner.zortout.webhook.log"].sudo()
+
         if payload is None:
+            log_model.log_request(
+                partner,
+                method,
+                payload=None,
+                http_status=400,
+                result={"status": "bad_request", "reason": "invalid_payload"},
+                message="Invalid payload.",
+            )
             return json_response(
                 {"error": "bad_request", "message": "Invalid payload."},
                 status=400,
@@ -51,8 +76,16 @@ class ZortoutWebhookController(http.Controller):
 
         try:
             result = partner.process_zortout_webhook(method, payload)
-        except Exception:
+        except Exception as error:
             request.env.cr.rollback()
+            log_model.log_request(
+                partner,
+                method,
+                payload=payload,
+                http_status=500,
+                result={"status": "error"},
+                message=str(error),
+            )
             _logger.exception(
                 "Zortout webhook failed for partner %s method %s",
                 partner.id,
@@ -63,6 +96,13 @@ class ZortoutWebhookController(http.Controller):
                 status=500,
             )
 
+        log_model.log_request(
+            partner,
+            method,
+            payload=payload,
+            http_status=200,
+            result=result,
+        )
         return json_response(result, status=200)
 
     def _extract_payload(self, kwargs):
