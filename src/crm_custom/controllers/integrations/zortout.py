@@ -29,7 +29,7 @@ class ZortoutWebhookController(http.Controller):
             )
 
         headers = request.httprequest.headers
-        method = self._extract_method(kwargs)
+        method = (kwargs.get("method") or request.params.get("method") or "").strip().upper()
 
         if not partner.validate_zortout_request_headers(headers):
             request.env["partner.zortout.webhook.log"].sudo().log_request(
@@ -44,36 +44,16 @@ class ZortoutWebhookController(http.Controller):
                 status=401,
             )
 
-        # ZORT "Verify and Save" may POST without method / with VERIFY.
-        if not method or method == "VERIFY":
-            request.env["partner.zortout.webhook.log"].sudo().log_request(
-                partner,
-                method or "VERIFY",
-                http_status=200,
-                result={"status": "ok", "reason": "verified"},
-                message="Webhook verified.",
-            )
-            return json_response({"status": "ok"}, status=200)
-
         if method not in SUPPORTED_METHODS:
             request.env["partner.zortout.webhook.log"].sudo().log_request(
                 partner,
                 method or "UNKNOWN",
                 http_status=400,
                 result={"status": "bad_request", "reason": "unsupported_method"},
-                message=(
-                    f"Unsupported webhook method '{method}'. "
-                    "รองรับเฉพาะ ADDORDER และ UPDATEORDER"
-                ),
+                message="Unsupported webhook method.",
             )
             return json_response(
-                {
-                    "error": "bad_request",
-                    "message": (
-                        f"Unsupported webhook method '{method}'. "
-                        "Only ADDORDER and UPDATEORDER are supported."
-                    ),
-                },
+                {"error": "bad_request", "message": "Unsupported webhook method."},
                 status=400,
             )
 
@@ -124,23 +104,6 @@ class ZortoutWebhookController(http.Controller):
             result=result,
         )
         return json_response(result, status=200)
-
-    def _extract_method(self, kwargs):
-        method = (
-            kwargs.get("method")
-            or request.params.get("method")
-            or ""
-        )
-        if not method and request.httprequest.data:
-            content_type = (request.httprequest.content_type or "").lower()
-            if "application/json" in content_type:
-                try:
-                    body = json.loads(request.httprequest.data.decode("utf-8"))
-                except (TypeError, ValueError, UnicodeDecodeError):
-                    body = None
-                if isinstance(body, dict):
-                    method = body.get("method") or ""
-        return str(method or "").strip().upper()
 
     def _extract_payload(self, kwargs):
         raw_payload = kwargs.get("payload")
