@@ -12,3 +12,5 @@ from . import warranty_contributor
 from . import warranty_status
 from . import warranty_comment
 from . import warranty
+from . import zortout_integration
+from . import zortout_order

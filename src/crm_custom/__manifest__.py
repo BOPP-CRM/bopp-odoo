@@ -1,6 +1,6 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.39",
+    "version": "1.0.40",
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
@@ -24,6 +24,7 @@
         "views/partner/warranty_view.xml",
         "views/partner/portal_user_wizard_view.xml",
         "views/partner/portal_api_key_wizard_view.xml",
+        "views/partner/zortout_order_view.xml",
         "views/partner/action_view.xml",
         "views/user/table_view.xml",
         "views/user/search_view.xml",
