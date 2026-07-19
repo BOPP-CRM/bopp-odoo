@@ -281,11 +281,23 @@ class PartnerZortoutIntegration(models.Model):
             res_desc = "Zortout API request failed"
         return False, res_desc, data
 
+    @api.model
+    def _is_zortout_missing_webhook_message(self, message):
+        normalized = (message or "").strip().lower()
+        return normalized in {
+            "invalid webhook",
+            "webhook not found",
+        }
+
     def _verify_zortout_credentials(self, storename, apikey, apisecret):
         self.ensure_one()
         ok, message, _data = self._get_zortout_webhook(apikey, apisecret, storename)
         if ok:
             return
+
+        if self._is_zortout_missing_webhook_message(message):
+            return
+
         if message:
             raise ValidationError(
                 f"ไม่สามารถยืนยัน Zortout credentials ได้: {message}"
