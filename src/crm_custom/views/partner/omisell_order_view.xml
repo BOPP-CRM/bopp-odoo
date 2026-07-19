@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_omisell_order_tree" model="ir.ui.view">
+        <field name="name">partner.omisell.order.tree</field>
+        <field name="model">partner.omisell.order</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="order_number"/>
+                <field name="omisell_order_number"/>
+                <field name="customer_name"/>
+                <field name="customer_phone"/>
+                <field name="amount"/>
+                <field name="payment_status"/>
+                <field name="order_status_name"/>
+                <field name="points_awarded"/>
+                <field name="reward_points"/>
+                <field name="last_webhook_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_partner_omisell_order_form" model="ir.ui.view">
+        <field name="name">partner.omisell.order.form</field>
+        <field name="model">partner.omisell.order</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id" readonly="1"/>
+                            <field name="order_number" readonly="1"/>
+                            <field name="omisell_order_number" readonly="1"/>
+                            <field name="webhook_event" readonly="1"/>
+                            <field name="webhook_request_id" readonly="1"/>
+                            <field name="last_webhook_at" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="platform" readonly="1"/>
+                            <field name="shop_id" readonly="1"/>
+                            <field name="seller_id" readonly="1"/>
+                            <field name="amount" readonly="1"/>
+                            <field name="payment_method" readonly="1"/>
+                            <field name="payment_status" readonly="1"/>
+                            <field name="order_status_id" readonly="1"/>
+                            <field name="order_status_name" readonly="1"/>
+                            <field name="is_fulfilled" readonly="1"/>
+                            <field name="points_awarded" readonly="1"/>
+                            <field name="points_awarded_at" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Customer">
+                        <field name="customer_name" readonly="1"/>
+                        <field name="customer_phone" readonly="1"/>
+                        <field name="customer_email" readonly="1"/>
+                        <field name="user_id" readonly="1"/>
+                    </group>
+                    <group string="Points">
+                        <field name="tier_convert_points" readonly="1"/>
+                        <field name="reward_points" readonly="1"/>
+                        <field name="spending_point_id" readonly="1"/>
+                        <field name="reward_point_id" readonly="1"/>
+                    </group>
+                    <group string="Error" invisible="not error_message">
+                        <field name="error_message" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_omisell_order" model="ir.actions.act_window">
+        <field name="name">Omisell Orders</field>
+        <field name="res_model">partner.omisell.order</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
