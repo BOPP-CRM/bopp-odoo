@@ -12,6 +12,7 @@
                 <field name="order_number"/>
                 <field name="payment_status"/>
                 <field name="points_awarded"/>
+                <field name="points_revoked"/>
                 <field name="reward_points"/>
                 <field name="message"/>
             </list>
