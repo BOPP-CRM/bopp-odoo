@@ -121,6 +121,7 @@ class PartnerZortoutIntegration(models.Model):
             "webhook_base_url": base_url or None,
             "addorder_url": base_url or None,
             "updateorder_url": base_url or None,
+            "deleteorder_url": base_url or None,
             "key1": self.zortout_key1 or None,
             "key2": self.zortout_key2 or None,
             "key3": self.zortout_key3 or None,
@@ -197,6 +198,11 @@ class PartnerZortoutIntegration(models.Model):
     def is_zortout_payment_successful(payload):
         payment_status = (payload.get("paymentstatus") or "").strip()
         return payment_status == "Paid"
+
+    @staticmethod
+    def is_zortout_order_voided(payload):
+        status = (payload.get("status") or "").strip().lower()
+        return status == "voided"
 
     def _get_spending_currency(self):
         self.ensure_one()

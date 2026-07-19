@@ -8,7 +8,7 @@ from ....util.request import json_response
 
 _logger = logging.getLogger(__name__)
 
-SUPPORTED_METHODS = {"ADDORDER", "UPDATEORDER"}
+SUPPORTED_METHODS = {"ADDORDER", "UPDATEORDER", "DELETEORDER"}
 
 
 class ZortoutWebhookController(http.Controller):

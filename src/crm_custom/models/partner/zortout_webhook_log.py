@@ -98,6 +98,7 @@ class PartnerZortoutWebhookLog(models.Model):
         warning = result.get("warning") or False
         result_status = result.get("status") or ("error" if http_status >= 400 else "ok")
         points_awarded = bool(result.get("points_awarded"))
+        points_revoked = bool(result.get("points_revoked"))
         reward_points = result.get("reward_points")
         if reward_points is None and order_record:
             reward_points = order_record.reward_points
@@ -110,6 +111,8 @@ class PartnerZortoutWebhookLog(models.Model):
             message = result["reason"]
         if not message and warning == "member_not_found":
             message = "ไม่พบสมาชิกจากเบอร์โทรหรืออีเมลของออเดอร์"
+        if not message and points_revoked:
+            message = "ลบคะแนนจากออเดอร์ที่ void หรือ delete แล้ว"
 
         return self.sudo().create({
             "partner_id": partner.id,
