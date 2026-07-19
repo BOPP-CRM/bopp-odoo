@@ -53,6 +53,7 @@
                         <field name="reward_points" readonly="1"/>
                         <field name="spending_point_id" readonly="1"/>
                         <field name="reward_point_id" readonly="1"/>
+                        <field name="receipt_redeem_id" readonly="1"/>
                     </group>
                     <group string="Error" invisible="not error_message">
                         <field name="error_message" readonly="1" nolabel="1"/>

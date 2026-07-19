@@ -26,6 +26,7 @@ class PartnerZortoutWebhookLog(models.Model):
     customer_phone = fields.Char(string="Customer Phone")
     customer_email = fields.Char(string="Customer Email")
     points_awarded = fields.Boolean(string="Points Awarded", default=False)
+    points_revoked = fields.Boolean(string="Points Revoked", default=False)
     reward_points = fields.Float(string="Reward Points")
     warning = fields.Char(string="Warning")
 
@@ -98,7 +99,14 @@ class PartnerZortoutWebhookLog(models.Model):
         warning = result.get("warning") or False
         result_status = result.get("status") or ("error" if http_status >= 400 else "ok")
         points_awarded = bool(result.get("points_awarded"))
+        points_revoked = bool(result.get("points_revoked"))
         reward_points = result.get("reward_points")
+        if reward_points is None and points_revoked and order_record:
+            reward_points = (
+                order_record.reward_point_id.value
+                if order_record.reward_point_id
+                else order_record.reward_points
+            )
         if reward_points is None and order_record:
             reward_points = order_record.reward_points
         try:
@@ -110,6 +118,8 @@ class PartnerZortoutWebhookLog(models.Model):
             message = result["reason"]
         if not message and warning == "member_not_found":
             message = "ไม่พบสมาชิกจากเบอร์โทรหรืออีเมลของออเดอร์"
+        if not message and points_revoked:
+            message = "ลบคะแนนจากออเดอร์ที่ void หรือ delete แล้ว"
 
         return self.sudo().create({
             "partner_id": partner.id,
@@ -122,6 +132,7 @@ class PartnerZortoutWebhookLog(models.Model):
             "zortout_order_record_id": order_record.id if order_record else False,
             **payload_fields,
             "points_awarded": points_awarded,
+            "points_revoked": points_revoked,
             "reward_points": reward_points,
         })
 
@@ -169,6 +180,7 @@ class PartnerZortoutWebhookLog(models.Model):
             "customer_phone": self.customer_phone or False,
             "customer_email": self.customer_email or False,
             "points_awarded": bool(self.points_awarded),
+            "points_revoked": bool(self.points_revoked),
             "reward_points": reward_points,
             "member": member,
         }

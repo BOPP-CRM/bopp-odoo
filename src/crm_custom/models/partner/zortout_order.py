@@ -54,12 +54,21 @@ class PartnerZortoutOrder(models.Model):
         readonly=True,
         ondelete="set null",
     )
+    receipt_redeem_id = fields.Many2one(
+        "crm.partner.receipt.redeem",
+        string="Receipt Redeem",
+        readonly=True,
+        ondelete="set null",
+    )
     tier_convert_points = fields.Float(string="Tier Convert Points", readonly=True)
     reward_points = fields.Float(string="Reward Points", readonly=True)
 
     @api.model
     def process_webhook(self, partner, method, payload):
         method = (method or "").strip().upper()
+        if method == "DELETEORDER":
+            return self._process_delete_order(partner, payload)
+
         if method not in {"ADDORDER", "UPDATEORDER"}:
             return {"status": "ignored", "reason": "unsupported_method"}
 
@@ -93,6 +102,9 @@ class PartnerZortoutOrder(models.Model):
         else:
             order = self.create(vals)
 
+        if order._should_revoke_points(partner, payload):
+            return order._revoke_points()
+
         if order.points_awarded:
             return {"status": "ok", "order_id": order.id, "points_awarded": False}
 
@@ -112,6 +124,112 @@ class PartnerZortoutOrder(models.Model):
             }
 
         return order._award_points(user, partner)
+
+    @api.model
+    def _process_delete_order(self, partner, payload):
+        zortout_order_id = payload.get("id")
+        if not zortout_order_id:
+            return {"status": "ignored", "reason": "missing_order_id"}
+
+        order = self.search([
+            ("partner_id", "=", partner.id),
+            ("zortout_order_id", "=", int(zortout_order_id)),
+        ], limit=1)
+        if not order:
+            return {
+                "status": "ok",
+                "points_revoked": False,
+                "reason": "order_not_found",
+            }
+
+        order.write({
+            "order_number": payload.get("number") or order.order_number,
+            "webhook_method": "DELETEORDER",
+            "last_webhook_at": fields.Datetime.now(),
+            "order_status": "Deleted",
+            "error_message": False,
+        })
+        result = order._revoke_points()
+        result["order_id"] = order.id
+        return result
+
+    def _should_revoke_points(self, partner, payload):
+        self.ensure_one()
+        if partner.is_zortout_order_voided(payload):
+            return True
+        if self.points_awarded and not partner.is_zortout_payment_successful(payload):
+            return True
+        return False
+
+    def _get_receipt_number(self):
+        self.ensure_one()
+        if self.order_number:
+            return self.order_number
+        return f"zortout-{self.zortout_order_id}"
+
+    def _revoke_points(self):
+        self.ensure_one()
+        if not self.points_awarded:
+            return {"status": "ok", "points_revoked": False}
+
+        now = fields.Datetime.now()
+        spending_point = self.spending_point_id.exists()
+        reward_point = self.reward_point_id.exists()
+        revoked_reward_points = reward_point.value if reward_point else (self.reward_points or 0)
+        order_label = self.order_number or str(self.zortout_order_id)
+        user = self.user_id
+
+        receipt = self.receipt_redeem_id
+        if receipt and receipt.state == "approved":
+            receipt.write({
+                "state": "rejected",
+                "reject_reason": "Zortout order voided or deleted",
+                "reviewed_date": now,
+                "spending_point_id": False,
+                "reward_point_id": False,
+            })
+
+        burn_vals_list = []
+        if spending_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} voided or deleted",
+                "value": spending_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": spending_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if reward_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} voided or deleted",
+                "value": reward_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": reward_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if burn_vals_list:
+            self.env["crm.user.point"].create(burn_vals_list)
+
+        self.write({
+            "points_awarded": False,
+            "points_awarded_at": False,
+            "spending_point_id": False,
+            "reward_point_id": False,
+            "tier_convert_points": 0,
+            "reward_points": 0,
+            "error_message": False,
+        })
+
+        return {
+            "status": "ok",
+            "order_id": self.id,
+            "points_revoked": True,
+            "reward_points": revoked_reward_points,
+            "user_id": user.id if user else False,
+        }
 
     def _award_points(self, user, partner):
         self.ensure_one()
@@ -184,12 +302,32 @@ class PartnerZortoutOrder(models.Model):
                 "user_id": user.id,
             })
 
+        receipt = self.env["crm.partner.receipt.redeem"].create({
+            "receipt_number": self._get_receipt_number(),
+            "partner_id": partner.id,
+            "user_id": user.id,
+            "amount": self.amount,
+            "submitted_date": now,
+            "state": "approved",
+            "reviewed_date": now,
+            "spending_point_id": spending_point.id,
+            "reward_point_id": reward_point.id if reward_point else False,
+            "tier_convert_points": convert_points,
+            "reward_points": reward_value,
+            "zortout_order_id": self.id,
+        })
+
+        spending_point.receipt_redeem_id = receipt.id
+        if reward_point:
+            reward_point.receipt_redeem_id = receipt.id
+
         self.write({
             "user_id": user.id,
             "points_awarded": True,
             "points_awarded_at": now,
             "spending_point_id": spending_point.id,
             "reward_point_id": reward_point.id if reward_point else False,
+            "receipt_redeem_id": receipt.id,
             "tier_convert_points": convert_points,
             "reward_points": reward_value,
             "error_message": False,
@@ -201,4 +339,5 @@ class PartnerZortoutOrder(models.Model):
             "points_awarded": True,
             "user_id": user.id,
             "reward_points": reward_value,
+            "receipt_redeem_id": receipt.id,
         }

@@ -1,9 +1,49 @@
+import logging
 import math
 import os
 import secrets
 
+import requests
+
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
+
+_logger = logging.getLogger(__name__)
+
+ZORTOUT_API_BASE_URL = "https://open-api.zortout.com/v4"
+ZORTOUT_WEBHOOK_URL_FIELDS = (
+    "addproducturl",
+    "updateproducturl",
+    "deleteproducturl",
+    "updatequantityurl",
+    "addorderurl",
+    "updateorderurl",
+    "deleteorderurl",
+    "updateordertrackingurl",
+    "updateorderpaymenturl",
+    "addpurchaseurl",
+    "updatepurchaseurl",
+    "updatepurchasepaymenturl",
+    "addreturnorderurl",
+    "updatereturnorderurl",
+    "updatereturnorderpaymenturl",
+    "addreturnpurchaseurl",
+    "updatereturnpurchaseurl",
+    "updatereturnpurchasepaymenturl",
+    "addtransferurl",
+    "updatetransferurl",
+    "deletewarehouseurl",
+    "updatewarehouseurl",
+    "addwarehouseurl",
+    "deletecontacturl",
+    "updatecontacturl",
+    "addcontacturl",
+)
+ZORTOUT_ORDER_WEBHOOK_FIELDS = (
+    "addorderurl",
+    "updateorderurl",
+    "deleteorderurl",
+)
 
 
 class PartnerZortoutIntegration(models.Model):
@@ -22,6 +62,14 @@ class PartnerZortoutIntegration(models.Model):
     zortout_key1 = fields.Char(string="Zortout Key 1", copy=False)
     zortout_key2 = fields.Char(string="Zortout Key 2", copy=False)
     zortout_key3 = fields.Char(string="Zortout Key 3", copy=False)
+    zortout_store_name = fields.Char(string="Zortout Store Name", copy=False)
+    zortout_api_key = fields.Char(string="Zortout API Key", copy=False)
+    zortout_api_secret = fields.Char(string="Zortout API Secret", copy=False)
+    zortout_webhook_synced = fields.Boolean(
+        string="Zortout Webhook Synced",
+        default=False,
+        tracking=True,
+    )
     zortout_order_ids = fields.One2many(
         "partner.zortout.order",
         "partner_id",
@@ -110,6 +158,61 @@ class PartnerZortoutIntegration(models.Model):
             "zortout_key2": self._generate_zortout_key(),
             "zortout_key3": self._generate_zortout_key(),
         })
+        if self.zortout_api_key and self.zortout_api_secret:
+            self._sync_zortout_webhook_with_stored_credentials()
+        return self.serialize_zortout_status()
+
+    def connect_zortout_for_api(self, storename, apikey, apisecret):
+        self.ensure_one()
+        storename = (storename or "").strip()
+        apikey = (apikey or "").strip()
+        apisecret = (apisecret or "").strip()
+        if not storename:
+            raise ValidationError("กรุณาระบุ Store Name จาก ZORT")
+        if not apikey or not apisecret:
+            raise ValidationError("กรุณาระบุ API Key และ API Secret")
+
+        self._ensure_zortout_credentials()
+        self._verify_zortout_credentials(storename, apikey, apisecret)
+        self.write({
+            "zortout_store_name": storename,
+            "zortout_api_key": apikey,
+            "zortout_api_secret": apisecret,
+        })
+        self._sync_zortout_webhook(apikey, apisecret, storename)
+        self.write({
+            "zortout_enabled": True,
+            "zortout_webhook_synced": True,
+        })
+        return self.serialize_zortout_status()
+
+    def resync_zortout_webhook_for_api(
+        self,
+        storename=None,
+        apikey=None,
+        apisecret=None,
+    ):
+        self.ensure_one()
+        storename = (storename or self.zortout_store_name or "").strip()
+        apikey = (apikey or self.zortout_api_key or "").strip()
+        apisecret = (apisecret or self.zortout_api_secret or "").strip()
+        if not storename:
+            raise ValidationError("กรุณาระบุ Store Name จาก ZORT")
+        if not apikey or not apisecret:
+            raise ValidationError("กรุณาระบุ API Key และ API Secret")
+
+        self._ensure_zortout_credentials()
+        self._verify_zortout_credentials(storename, apikey, apisecret)
+        self.write({
+            "zortout_store_name": storename,
+            "zortout_api_key": apikey,
+            "zortout_api_secret": apisecret,
+        })
+        self._sync_zortout_webhook(apikey, apisecret, storename)
+        self.write({
+            "zortout_enabled": True,
+            "zortout_webhook_synced": True,
+        })
         return self.serialize_zortout_status()
 
     def serialize_zortout_status(self):
@@ -118,13 +221,142 @@ class PartnerZortoutIntegration(models.Model):
         return {
             "enabled": bool(self.zortout_enabled),
             "configured": bool(self.zortout_webhook_token and self.zortout_key1),
+            "webhook_synced": bool(self.zortout_webhook_synced),
+            "api_credentials_configured": bool(
+                self.zortout_api_key and self.zortout_api_secret
+            ),
+            "store_name": self.zortout_store_name or None,
             "webhook_base_url": base_url or None,
             "addorder_url": base_url or None,
             "updateorder_url": base_url or None,
+            "deleteorder_url": base_url or None,
             "key1": self.zortout_key1 or None,
             "key2": self.zortout_key2 or None,
             "key3": self.zortout_key3 or None,
         }
+
+    @api.model
+    def _zortout_request_headers(self, storename, apikey, apisecret):
+        return {
+            "storename": storename,
+            "apikey": apikey,
+            "apisecret": apisecret,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+    @api.model
+    def _is_zortout_webhook_config(self, data):
+        if not isinstance(data, dict):
+            return False
+        return any(
+            marker in data
+            for marker in ("key1", "addorderurl", "updateorderurl", "hookVersion")
+        )
+
+    @api.model
+    def _parse_zortout_response(self, response):
+        try:
+            data = response.json()
+        except ValueError:
+            return False, "Zortout ตอบกลับข้อมูลไม่ถูกต้อง", {}
+
+        if not isinstance(data, dict):
+            return False, "Zortout ตอบกลับข้อมูลไม่ถูกต้อง", {}
+
+        res_code = data.get("resCode")
+        if res_code is None and isinstance(data.get("res"), dict):
+            res_code = data["res"].get("resCode")
+
+        if str(res_code) == "200":
+            return True, data.get("resDesc") or "Success", data
+
+        if response.ok and self._is_zortout_webhook_config(data):
+            return True, "Success", data
+
+        res_desc = data.get("resDesc")
+        if not res_desc and isinstance(data.get("res"), dict):
+            res_desc = data["res"].get("resDesc")
+        if not res_desc:
+            res_desc = "Zortout API request failed"
+        return False, res_desc, data
+
+    def _verify_zortout_credentials(self, storename, apikey, apisecret):
+        self.ensure_one()
+        ok, message, _data = self._get_zortout_webhook(apikey, apisecret, storename)
+        if ok:
+            return
+        if message:
+            raise ValidationError(
+                f"ไม่สามารถยืนยัน Zortout credentials ได้: {message}"
+            )
+        raise ValidationError(
+            "ไม่สามารถยืนยัน Zortout credentials ได้ "
+            "กรุณาตรวจสอบ Store Name, API Key และ API Secret"
+        )
+
+    def _get_zortout_webhook(self, apikey, apisecret, storename):
+        self.ensure_one()
+        try:
+            response = requests.get(
+                f"{ZORTOUT_API_BASE_URL}/Webhook/GetWebhook",
+                headers=self._zortout_request_headers(storename, apikey, apisecret),
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            _logger.warning("Zortout GetWebhook failed for partner %s: %s", self.id, error)
+            return False, "ไม่สามารถเชื่อมต่อ Zortout API ได้", {}
+
+        return self._parse_zortout_response(response)
+
+    def _sync_zortout_webhook_with_stored_credentials(self):
+        self.ensure_one()
+        if not self.zortout_api_key or not self.zortout_api_secret:
+            raise ValidationError("ยังไม่ได้บันทึก Zortout API credentials")
+        if not self.zortout_store_name:
+            raise ValidationError("ยังไม่ได้บันทึก Store Name จาก ZORT")
+        self._sync_zortout_webhook(
+            self.zortout_api_key,
+            self.zortout_api_secret,
+            self.zortout_store_name,
+        )
+        self.write({"zortout_webhook_synced": True})
+
+    def _sync_zortout_webhook(self, apikey, apisecret, storename):
+        self.ensure_one()
+        webhook_url = self._get_zortout_webhook_base_url()
+        if not webhook_url:
+            raise ValidationError("ไม่พบ Webhook URL ของระบบ")
+
+        ok, _message, current = self._get_zortout_webhook(apikey, apisecret, storename)
+        payload = {
+            "key1": self.zortout_key1,
+            "key2": self.zortout_key2,
+            "key3": self.zortout_key3,
+        }
+        if ok:
+            for field in ZORTOUT_WEBHOOK_URL_FIELDS:
+                value = current.get(field)
+                if value not in (None, "", False):
+                    payload[field] = value
+
+        for field in ZORTOUT_ORDER_WEBHOOK_FIELDS:
+            payload[field] = webhook_url
+
+        try:
+            response = requests.post(
+                f"{ZORTOUT_API_BASE_URL}/Webhook/UpdateWebhook",
+                headers=self._zortout_request_headers(storename, apikey, apisecret),
+                json=payload,
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            _logger.warning("Zortout UpdateWebhook failed for partner %s: %s", self.id, error)
+            raise ValidationError("ไม่สามารถเชื่อมต่อ Zortout API ได้") from error
+
+        ok, message, _data = self._parse_zortout_response(response)
+        if not ok:
+            raise ValidationError(message or "ไม่สามารถตั้งค่า Webhook ใน Zortout ได้")
 
     def validate_zortout_request_headers(self, headers):
         self.ensure_one()
@@ -197,6 +429,11 @@ class PartnerZortoutIntegration(models.Model):
     def is_zortout_payment_successful(payload):
         payment_status = (payload.get("paymentstatus") or "").strip()
         return payment_status == "Paid"
+
+    @staticmethod
+    def is_zortout_order_voided(payload):
+        status = (payload.get("status") or "").strip().lower()
+        return status == "voided"
 
     def _get_spending_currency(self):
         self.ensure_one()

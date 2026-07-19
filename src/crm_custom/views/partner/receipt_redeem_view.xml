@@ -96,6 +96,7 @@
                     <group string="Assigned Points" invisible="state != 'approved'">
                         <field name="spending_point_id" readonly="1"/>
                         <field name="reward_point_id" readonly="1"/>
+                        <field name="zortout_order_id" readonly="1"/>
                     </group>
                 </sheet>
                 <chatter>

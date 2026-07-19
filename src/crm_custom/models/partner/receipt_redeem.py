@@ -83,6 +83,14 @@ class PartnerReceiptRedeem(models.Model):
         readonly=True,
         copy=False,
     )
+    zortout_order_id = fields.Many2one(
+        "partner.zortout.order",
+        string="Zortout Order",
+        readonly=True,
+        ondelete="set null",
+        copy=False,
+        index=True,
+    )
 
     def _get_s3_image_config(self):
         return {
