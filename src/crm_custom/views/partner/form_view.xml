@@ -284,7 +284,7 @@
                                 <field name="omisell_webhook_token" readonly="1"/>
                                 <field name="omisell_webhook_secret" readonly="1"/>
                                 <field name="omisell_api_key"/>
-                                <field name="omisell_api_token"/>
+                                <field name="omisell_api_secret"/>
                                 <field name="omisell_seller_id"/>
                                 <field name="omisell_country"/>
                                 <field name="omisell_api_base_url"/>

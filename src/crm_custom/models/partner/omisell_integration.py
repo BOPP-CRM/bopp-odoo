@@ -44,8 +44,8 @@ class PartnerOmisellIntegration(models.Model):
         copy=False,
         password="True",
     )
-    omisell_api_token = fields.Char(
-        string="Omisell API Token",
+    omisell_api_secret = fields.Char(
+        string="Omisell API Secret",
         copy=False,
         password="True",
     )
@@ -76,7 +76,7 @@ class PartnerOmisellIntegration(models.Model):
     ]
 
     def write(self, vals):
-        token_related_fields = {"omisell_api_key", "omisell_api_token", "omisell_api_base_url"}
+        token_related_fields = {"omisell_api_key", "omisell_api_secret", "omisell_api_base_url"}
         if token_related_fields.intersection(vals.keys()):
             vals = {
                 **vals,
@@ -142,8 +142,8 @@ class PartnerOmisellIntegration(models.Model):
         missing_fields = []
         if not (self.omisell_api_key or "").strip():
             missing_fields.append("API Key")
-        if not (self.omisell_api_token or "").strip():
-            missing_fields.append("API Token")
+        if not (self.omisell_api_secret or "").strip():
+            missing_fields.append("API Secret")
         if not (self.omisell_seller_id or "").strip():
             missing_fields.append("Seller ID")
         if missing_fields:
@@ -194,7 +194,7 @@ class PartnerOmisellIntegration(models.Model):
                 self.omisell_webhook_token
                 and self.omisell_webhook_secret
                 and self.omisell_api_key
-                and self.omisell_api_token
+                and self.omisell_api_secret
                 and self.omisell_seller_id
             ),
             "webhook_url": webhook_url or None,
@@ -203,7 +203,7 @@ class PartnerOmisellIntegration(models.Model):
             "country": self.omisell_country or None,
             "api_base_url": self.omisell_api_base_url or OMISELL_API_BASE_URL,
             "has_api_key": bool(self.omisell_api_key),
-            "has_api_token": bool(self.omisell_api_token),
+            "has_api_secret": bool(self.omisell_api_secret),
             "access_token_expired_at": (
                 fields.Datetime.to_string(self.omisell_access_token_expired_at)
                 if self.omisell_access_token_expired_at
@@ -371,7 +371,7 @@ class PartnerOmisellIntegration(models.Model):
         auth_url = self._get_omisell_auth_url()
         payload = {
             "api_key": (self.omisell_api_key or "").strip(),
-            "api_secret": (self.omisell_api_token or "").strip(),
+            "api_secret": (self.omisell_api_secret or "").strip(),
         }
 
         try:
