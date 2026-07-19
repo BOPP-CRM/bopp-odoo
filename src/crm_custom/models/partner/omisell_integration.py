@@ -1,6 +1,7 @@
 import math
 import os
 import secrets
+from datetime import datetime, timedelta
 
 import requests
 
@@ -8,6 +9,7 @@ from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
 OMISELL_API_BASE_URL = "https://api.omisell.com"
+OMISELL_AUTH_TOKEN_PATH = "/api/v2/auth/token/get/"
 OMISELL_ELIGIBLE_STATUS_IDS = {300, 350, 360, 400, 460, 500, 600, 900}
 OMISELL_ELIGIBLE_STATUS_NAMES = {
     "approved",
@@ -37,10 +39,20 @@ class PartnerOmisellIntegration(models.Model):
         string="Omisell Webhook Secret",
         copy=False,
     )
-    omisell_partner_key = fields.Char(
-        string="Omisell Partner Key",
+    omisell_api_key = fields.Char(
+        string="Omisell API Key",
         copy=False,
         password="True",
+    )
+    omisell_api_token = fields.Char(
+        string="Omisell API Token",
+        copy=False,
+        password="True",
+    )
+    omisell_access_token = fields.Char(string="Omisell Access Token", copy=False)
+    omisell_access_token_expired_at = fields.Datetime(
+        string="Omisell Access Token Expired At",
+        copy=False,
     )
     omisell_seller_id = fields.Char(string="Omisell Seller ID", copy=False)
     omisell_country = fields.Char(string="Omisell Country", copy=False, default="TH")
@@ -64,6 +76,13 @@ class PartnerOmisellIntegration(models.Model):
     ]
 
     def write(self, vals):
+        token_related_fields = {"omisell_api_key", "omisell_api_token", "omisell_api_base_url"}
+        if token_related_fields.intersection(vals.keys()):
+            vals = {
+                **vals,
+                "omisell_access_token": False,
+                "omisell_access_token_expired_at": False,
+            }
         result = super().write(vals)
         if vals.get("omisell_enabled"):
             for partner in self:
@@ -121,8 +140,10 @@ class PartnerOmisellIntegration(models.Model):
     def _validate_omisell_configuration(self):
         self.ensure_one()
         missing_fields = []
-        if not (self.omisell_partner_key or "").strip():
-            missing_fields.append("Partner Key")
+        if not (self.omisell_api_key or "").strip():
+            missing_fields.append("API Key")
+        if not (self.omisell_api_token or "").strip():
+            missing_fields.append("API Token")
         if not (self.omisell_seller_id or "").strip():
             missing_fields.append("Seller ID")
         if missing_fields:
@@ -172,7 +193,8 @@ class PartnerOmisellIntegration(models.Model):
             "configured": bool(
                 self.omisell_webhook_token
                 and self.omisell_webhook_secret
-                and self.omisell_partner_key
+                and self.omisell_api_key
+                and self.omisell_api_token
                 and self.omisell_seller_id
             ),
             "webhook_url": webhook_url or None,
@@ -180,7 +202,13 @@ class PartnerOmisellIntegration(models.Model):
             "seller_id": self.omisell_seller_id or None,
             "country": self.omisell_country or None,
             "api_base_url": self.omisell_api_base_url or OMISELL_API_BASE_URL,
-            "has_partner_key": bool(self.omisell_partner_key),
+            "has_api_key": bool(self.omisell_api_key),
+            "has_api_token": bool(self.omisell_api_token),
+            "access_token_expired_at": (
+                fields.Datetime.to_string(self.omisell_access_token_expired_at)
+                if self.omisell_access_token_expired_at
+                else False
+            ),
         }
 
     def validate_omisell_request_headers(self, headers, payload=None):
@@ -324,12 +352,83 @@ class PartnerOmisellIntegration(models.Model):
         ).strip().lower()
         return status_name in OMISELL_ELIGIBLE_STATUS_NAMES
 
-    def _get_omisell_request_headers(self):
+    def _has_valid_omisell_access_token(self):
+        self.ensure_one()
+        if not self.omisell_access_token or not self.omisell_access_token_expired_at:
+            return False
+        expired_at = fields.Datetime.to_datetime(self.omisell_access_token_expired_at)
+        return bool(expired_at and expired_at > fields.Datetime.now() + timedelta(minutes=1))
+
+    def _get_omisell_auth_url(self):
+        self.ensure_one()
+        base_url = (self.omisell_api_base_url or OMISELL_API_BASE_URL).rstrip("/")
+        return f"{base_url}{OMISELL_AUTH_TOKEN_PATH}"
+
+    def _request_omisell_access_token(self):
         self.ensure_one()
         self._validate_omisell_configuration()
 
+        auth_url = self._get_omisell_auth_url()
+        payload = {
+            "api_key": (self.omisell_api_key or "").strip(),
+            "api_secret": (self.omisell_api_token or "").strip(),
+        }
+
+        try:
+            response = requests.post(
+                auth_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            raise ValidationError(f"Unable to connect to Omisell auth API: {error}") from error
+
+        try:
+            response_payload = response.json()
+        except ValueError as error:
+            raise ValidationError("Invalid response from Omisell auth API.") from error
+
+        if response.status_code >= 400:
+            message = response_payload.get("messages") if isinstance(response_payload, dict) else False
+            raise ValidationError(message or f"Omisell auth API returned HTTP {response.status_code}.")
+
+        if not isinstance(response_payload, dict):
+            raise ValidationError("Invalid response from Omisell auth API.")
+
+        if response_payload.get("error"):
+            raise ValidationError(response_payload.get("messages") or "Omisell auth API returned an error.")
+
+        data = response_payload.get("data")
+        if not isinstance(data, dict):
+            raise ValidationError("Invalid Omisell access token response.")
+
+        access_token = (data.get("token") or "").strip()
+        expired_time = data.get("expired_time")
+        if not access_token or not expired_time:
+            raise ValidationError("Omisell auth response is missing token data.")
+
+        try:
+            expired_at = datetime.utcfromtimestamp(float(expired_time))
+        except Exception as error:
+            raise ValidationError("Invalid expired_time from Omisell auth response.") from error
+
+        self.write({
+            "omisell_access_token": access_token,
+            "omisell_access_token_expired_at": fields.Datetime.to_string(expired_at),
+        })
+        return access_token
+
+    def _get_omisell_request_headers(self, force_refresh=False):
+        self.ensure_one()
+        self._validate_omisell_configuration()
+
+        access_token = self.omisell_access_token if not force_refresh else False
+        if not access_token or force_refresh or not self._has_valid_omisell_access_token():
+            access_token = self._request_omisell_access_token()
+
         headers = {
-            "Authorization": f"Partner {(self.omisell_partner_key or '').strip()}",
+            "Authorization": f"Omi {access_token}",
             "Content-Type": "application/json",
         }
         if self.omisell_seller_id:
@@ -353,6 +452,12 @@ class PartnerOmisellIntegration(models.Model):
                 headers=self._get_omisell_request_headers(),
                 timeout=30,
             )
+            if response.status_code == 401:
+                response = requests.get(
+                    url,
+                    headers=self._get_omisell_request_headers(force_refresh=True),
+                    timeout=30,
+                )
         except requests.RequestException as error:
             raise ValidationError(f"Unable to connect to Omisell API: {error}") from error
 
