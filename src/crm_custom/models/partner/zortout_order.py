@@ -173,7 +173,11 @@ class PartnerZortoutOrder(models.Model):
             return {"status": "ok", "points_revoked": False}
 
         now = fields.Datetime.now()
-        points_to_delete = (self.spending_point_id | self.reward_point_id).exists()
+        spending_point = self.spending_point_id.exists()
+        reward_point = self.reward_point_id.exists()
+        revoked_reward_points = reward_point.value if reward_point else (self.reward_points or 0)
+        order_label = self.order_number or str(self.zortout_order_id)
+        user = self.user_id
 
         receipt = self.receipt_redeem_id
         if receipt and receipt.state == "approved":
@@ -185,8 +189,29 @@ class PartnerZortoutOrder(models.Model):
                 "reward_point_id": False,
             })
 
-        if points_to_delete:
-            points_to_delete.unlink()
+        burn_vals_list = []
+        if spending_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} voided or deleted",
+                "value": spending_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": spending_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if reward_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} voided or deleted",
+                "value": reward_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": reward_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if burn_vals_list:
+            self.env["crm.user.point"].create(burn_vals_list)
 
         self.write({
             "points_awarded": False,
@@ -202,6 +227,8 @@ class PartnerZortoutOrder(models.Model):
             "status": "ok",
             "order_id": self.id,
             "points_revoked": True,
+            "reward_points": revoked_reward_points,
+            "user_id": user.id if user else False,
         }
 
     def _award_points(self, user, partner):
