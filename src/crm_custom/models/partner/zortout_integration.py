@@ -18,6 +18,7 @@ ZORTOUT_WEBHOOK_URL_FIELDS = (
     "updatequantityurl",
     "addorderurl",
     "updateorderurl",
+    "deleteorderurl",
     "updateordertrackingurl",
     "updateorderpaymenturl",
     "addpurchaseurl",
@@ -41,6 +42,7 @@ ZORTOUT_WEBHOOK_URL_FIELDS = (
 ZORTOUT_ORDER_WEBHOOK_FIELDS = (
     "addorderurl",
     "updateorderurl",
+    "deleteorderurl",
 )
 
 
@@ -244,6 +246,15 @@ class PartnerZortoutIntegration(models.Model):
         }
 
     @api.model
+    def _is_zortout_webhook_config(self, data):
+        if not isinstance(data, dict):
+            return False
+        return any(
+            marker in data
+            for marker in ("key1", "addorderurl", "updateorderurl", "hookVersion")
+        )
+
+    @api.model
     def _parse_zortout_response(self, response):
         try:
             data = response.json()
@@ -260,11 +271,14 @@ class PartnerZortoutIntegration(models.Model):
         if str(res_code) == "200":
             return True, data.get("resDesc") or "Success", data
 
+        if response.ok and self._is_zortout_webhook_config(data):
+            return True, "Success", data
+
         res_desc = data.get("resDesc")
         if not res_desc and isinstance(data.get("res"), dict):
             res_desc = data["res"].get("resDesc")
         if not res_desc:
-            res_desc = response.text or "Zortout API request failed"
+            res_desc = "Zortout API request failed"
         return False, res_desc, data
 
     def _verify_zortout_credentials(self, storename, apikey, apisecret):
@@ -323,7 +337,7 @@ class PartnerZortoutIntegration(models.Model):
         if ok:
             for field in ZORTOUT_WEBHOOK_URL_FIELDS:
                 value = current.get(field)
-                if value:
+                if value not in (None, "", False):
                     payload[field] = value
 
         for field in ZORTOUT_ORDER_WEBHOOK_FIELDS:
