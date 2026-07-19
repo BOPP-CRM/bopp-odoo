@@ -1,3 +1,5 @@
+import json
+
 from odoo import http
 from odoo.exceptions import ValidationError
 from odoo.http import request
@@ -99,8 +101,81 @@ class PortalZortoutController(http.Controller):
 
         return json_response({
             "zortout": status,
-            "message": "Zortout keys regenerated. Update them in ZORT portal.",
+            "message": "Zortout keys regenerated and webhook synced.",
         })
+
+    @http.route(
+        "/api/portal/zortout/connect",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def connect_zortout(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload = self._parse_json_payload()
+        partner = portal_user.crm_partner_id.sudo()
+        try:
+            status = partner.connect_zortout_for_api(
+                payload.get("storename"),
+                payload.get("apikey"),
+                payload.get("apisecret"),
+            )
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        return json_response({
+            "zortout": status,
+            "message": "Zortout webhook configured successfully.",
+        }, status=201)
+
+    @http.route(
+        "/api/portal/zortout/sync-webhook",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def sync_zortout_webhook(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload = self._parse_json_payload()
+        partner = portal_user.crm_partner_id.sudo()
+        try:
+            status = partner.resync_zortout_webhook_for_api(
+                storename=payload.get("storename"),
+                apikey=payload.get("apikey"),
+                apisecret=payload.get("apisecret"),
+            )
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        return json_response({
+            "zortout": status,
+            "message": "Zortout webhook synced successfully.",
+        })
+
+    def _parse_json_payload(self):
+        try:
+            payload = json.loads(request.httprequest.get_data(as_text=True) or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
 
     @http.route(
         "/api/portal/zortout/logs",

@@ -259,6 +259,9 @@
                         <page string="Zortout" name="zortout">
                             <group string="Webhook Integration">
                                 <field name="zortout_enabled" widget="boolean_toggle"/>
+                                <field name="zortout_webhook_synced" readonly="1"/>
+                                <field name="zortout_store_name" readonly="1"/>
+                                <field name="zortout_api_key" readonly="1"/>
                                 <field name="zortout_webhook_token" readonly="1"/>
                                 <field name="zortout_key1" readonly="1"/>
                                 <field name="zortout_key2" readonly="1"/>
