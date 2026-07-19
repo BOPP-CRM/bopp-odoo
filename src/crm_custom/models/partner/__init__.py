@@ -15,3 +15,6 @@ from . import warranty
 from . import zortout_integration
 from . import zortout_order
 from . import zortout_webhook_log
+from . import omisell_integration
+from . import omisell_order
+from . import omisell_webhook_log
