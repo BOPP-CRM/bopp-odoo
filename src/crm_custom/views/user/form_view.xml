@@ -48,6 +48,17 @@
                         </group>
                     </group>
 
+                    <group string="Zortout">
+                        <group>
+                            <field name="zortout_contact_id" readonly="1"/>
+                            <field name="zortout_sync_status" readonly="1"/>
+                            <field name="zortout_synced_at" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="zortout_sync_error" readonly="1"/>
+                        </group>
+                    </group>
+
                     <notebook>
                         <page string="Points">
                             <group string="Balance Summary">

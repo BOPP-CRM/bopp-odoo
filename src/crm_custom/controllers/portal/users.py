@@ -272,6 +272,17 @@ class PortalUsersController(http.Controller):
             "tier": self._serialize_tier(user.tier_id),
             "points": self._serialize_balances(user),
             "create_date": fields.Datetime.to_string(user.create_date),
+            "zortout": self._serialize_user_zortout(user),
+        }
+
+    def _serialize_user_zortout(self, user):
+        return {
+            "contact_id": user.zortout_contact_id or False,
+            "synced_at": fields.Datetime.to_string(user.zortout_synced_at)
+            if user.zortout_synced_at
+            else False,
+            "sync_status": user.zortout_sync_status or False,
+            "sync_error": user.zortout_sync_error or False,
         }
 
     def _serialize_tier(self, tier):

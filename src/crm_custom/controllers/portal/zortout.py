@@ -1,6 +1,6 @@
 import json
 
-from odoo import http
+from odoo import fields, http
 from odoo.exceptions import ValidationError
 from odoo.http import request
 
@@ -203,6 +203,157 @@ class PortalZortoutController(http.Controller):
             "limit": limit,
             "offset": offset,
         })
+
+    @http.route(
+        "/api/portal/zortout/members/sync",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def start_zortout_member_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload = self._parse_json_payload()
+        partner = portal_user.crm_partner_id.sudo()
+        user_ids = payload.get("user_ids")
+        if user_ids is not None and not isinstance(user_ids, list):
+            return json_response(
+                {"error": "invalid_payload", "message": "user_ids must be an array."},
+                status=400,
+            )
+
+        parsed_user_ids = None
+        if user_ids:
+            parsed_user_ids = []
+            for user_id in user_ids:
+                try:
+                    parsed_user_ids.append(int(user_id))
+                except (TypeError, ValueError):
+                    return json_response(
+                        {"error": "invalid_payload", "message": "user_ids must contain integers."},
+                        status=400,
+                    )
+
+        job_model = request.env["partner.zortout.member.sync.job"].sudo()
+        try:
+            job = job_model.start_sync_for_partner(partner, parsed_user_ids)
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+            "message": "Zortout member sync started.",
+        }, status=201)
+
+    @http.route(
+        "/api/portal/zortout/members/sync/active",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_active_zortout_member_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.zortout.member.sync.job"].sudo()
+        return json_response({
+            "job": job_model.get_active_job_for_partner(partner),
+        })
+
+    @http.route(
+        "/api/portal/zortout/members/sync/<int:job_id>",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_zortout_member_sync_job(self, job_id, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job = request.env["partner.zortout.member.sync.job"].sudo().search([
+            ("id", "=", job_id),
+            ("partner_id", "=", partner.id),
+        ], limit=1)
+        if not job:
+            return json_response(
+                {"error": "job_not_found", "message": "ไม่พบงาน sync ดังกล่าว"},
+                status=404,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+        })
+
+    @http.route(
+        "/api/portal/users/<int:user_id>/zortout/sync",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def sync_user_to_zortout(self, user_id, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        user = request.env["crm.user"].sudo().search([
+            ("id", "=", user_id),
+            ("partner_id", "=", partner.id),
+        ], limit=1)
+        if not user:
+            return json_response(
+                {"error": "user_not_found", "message": "ไม่พบผู้ใช้งานดังกล่าว"},
+                status=404,
+            )
+
+        try:
+            result = partner.sync_member_to_zortout(user)
+        except ValidationError as error:
+            request.env.cr.rollback()
+            user = request.env["crm.user"].sudo().browse(user.id)
+            return json_response(
+                {
+                    "error": "sync_failed",
+                    "message": str(error),
+                    "user": self._serialize_user_zortout(user),
+                },
+                status=400,
+            )
+
+        user = request.env["crm.user"].sudo().browse(user.id)
+        return json_response({
+            "result": result,
+            "user": self._serialize_user_zortout(user),
+            "message": "Sync สมาชิกไป Zortout สำเร็จ",
+        })
+
+    def _serialize_user_zortout(self, user):
+        return {
+            "contact_id": user.zortout_contact_id or False,
+            "synced_at": fields.Datetime.to_string(user.zortout_synced_at)
+            if user.zortout_synced_at
+            else False,
+            "sync_status": user.zortout_sync_status or False,
+            "sync_error": user.zortout_sync_error or False,
+        }
 
     def _parse_int(self, value):
         try:

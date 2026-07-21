@@ -43,6 +43,20 @@ class User(models.Model):
 
     active = fields.Boolean(string="Active", default=True, tracking=True)
 
+    zortout_contact_id = fields.Integer(string="Zortout Contact ID", copy=False, index=True)
+    zortout_synced_at = fields.Datetime(string="Zortout Synced At", copy=False)
+    zortout_sync_status = fields.Selection(
+        [
+            ("pending", "Pending"),
+            ("synced", "Synced"),
+            ("failed", "Failed"),
+            ("skipped", "Skipped"),
+        ],
+        string="Zortout Sync Status",
+        copy=False,
+    )
+    zortout_sync_error = fields.Text(string="Zortout Sync Error", copy=False)
+
     partner_id = fields.Many2one(
         "partner",
         string="Partner",
