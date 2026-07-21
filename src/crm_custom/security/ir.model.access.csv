@@ -33,3 +33,4 @@ access_partner_zortout_order,access.partner.zortout.order,model_partner_zortout_
 access_partner_zortout_webhook_log,access.partner.zortout.webhook.log,model_partner_zortout_webhook_log,,1,1,1,1
 access_partner_omisell_order,access.partner.omisell.order,model_partner_omisell_order,,1,1,1,1
 access_partner_omisell_webhook_log,access.partner.omisell.webhook.log,model_partner_omisell_webhook_log,,1,1,1,1
+access_partner_zortout_member_sync_job,access.partner.zortout.member.sync.job,model_partner_zortout_member_sync_job,,1,1,1,1
