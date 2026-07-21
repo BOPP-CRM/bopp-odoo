@@ -304,7 +304,10 @@ class PartnerZortoutIntegration(models.Model):
             return False, "Zortout ตอบกลับข้อมูลไม่ถูกต้อง", {}
 
         res_code = self._extract_zortout_res_code(data)
-        if res_code == "200":
+        if res_code in {"200", "201"}:
+            return True, self._extract_zortout_res_desc(data) or "Success", data
+
+        if response.ok and isinstance(data, dict) and data.get("id") and "list" not in data:
             return True, self._extract_zortout_res_desc(data) or "Success", data
 
         detail = data.get("detail")

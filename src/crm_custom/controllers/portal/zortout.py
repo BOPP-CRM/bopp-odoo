@@ -328,6 +328,14 @@ class PortalZortoutController(http.Controller):
             result = partner.sync_member_to_zortout(user)
         except ValidationError as error:
             user = request.env["crm.user"].sudo().browse(user.id)
+            if user.zortout_sync_status == "pending":
+                user.with_context(skip_zortout_auto_sync=True).write({
+                    "zortout_sync_status": "failed",
+                    "zortout_sync_error": str(error),
+                    "zortout_synced_at": fields.Datetime.now(),
+                })
+            request.env.cr.flush()
+            user.invalidate_recordset()
             return json_response(
                 {
                     "error": "sync_failed",
@@ -345,8 +353,9 @@ class PortalZortoutController(http.Controller):
         })
 
     def _serialize_user_zortout(self, user):
+        contact_id = user.zortout_contact_id
         return {
-            "contact_id": user.zortout_contact_id or False,
+            "contact_id": contact_id if contact_id and contact_id > 0 else False,
             "synced_at": fields.Datetime.to_string(user.zortout_synced_at)
             if user.zortout_synced_at
             else False,

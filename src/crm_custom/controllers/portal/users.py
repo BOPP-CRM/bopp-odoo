@@ -276,8 +276,9 @@ class PortalUsersController(http.Controller):
         }
 
     def _serialize_user_zortout(self, user):
+        contact_id = user.zortout_contact_id
         return {
-            "contact_id": user.zortout_contact_id or False,
+            "contact_id": contact_id if contact_id and contact_id > 0 else False,
             "synced_at": fields.Datetime.to_string(user.zortout_synced_at)
             if user.zortout_synced_at
             else False,
