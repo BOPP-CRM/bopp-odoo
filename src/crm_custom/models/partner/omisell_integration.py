@@ -202,8 +202,8 @@ class PartnerOmisellIntegration(models.Model):
             "seller_id": self.omisell_seller_id or None,
             "country": self.omisell_country or None,
             "api_base_url": self.omisell_api_base_url or OMISELL_API_BASE_URL,
-            "has_api_key": bool(self.omisell_api_key),
-            "has_api_secret": bool(self.omisell_api_secret),
+            "api_key": self.omisell_api_key or None,
+            "api_secret": self.omisell_api_secret or None,
             "access_token_expired_at": (
                 fields.Datetime.to_string(self.omisell_access_token_expired_at)
                 if self.omisell_access_token_expired_at
