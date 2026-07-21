@@ -327,7 +327,6 @@ class PortalZortoutController(http.Controller):
         try:
             result = partner.sync_member_to_zortout(user)
         except ValidationError as error:
-            request.env.cr.rollback()
             user = request.env["crm.user"].sudo().browse(user.id)
             return json_response(
                 {
