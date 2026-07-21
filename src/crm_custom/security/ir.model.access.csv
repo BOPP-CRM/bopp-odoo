@@ -31,3 +31,4 @@ access_partner_portal_api_usage,access.partner.portal.api.usage,model_partner_po
 access_res_users_partner_portal,access.res.users.partner.portal,base.model_res_users,crm_custom.group_partner_portal,1,0,0,0
 access_partner_zortout_order,access.partner.zortout.order,model_partner_zortout_order,,1,1,1,1
 access_partner_zortout_webhook_log,access.partner.zortout.webhook.log,model_partner_zortout_webhook_log,,1,1,1,1
+access_partner_zortout_member_sync_job,access.partner.zortout.member.sync.job,model_partner_zortout_member_sync_job,,1,1,1,1

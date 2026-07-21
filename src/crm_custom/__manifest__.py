@@ -1,6 +1,6 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.41",
+    "version": "1.0.42",
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
@@ -26,6 +26,8 @@
         "views/partner/portal_api_key_wizard_view.xml",
         "views/partner/zortout_order_view.xml",
         "views/partner/zortout_webhook_log_view.xml",
+        "views/partner/zortout_member_sync_job_view.xml",
+        "data/zortout_member_sync_cron.xml",
         "views/partner/action_view.xml",
         "views/user/table_view.xml",
         "views/user/search_view.xml",
