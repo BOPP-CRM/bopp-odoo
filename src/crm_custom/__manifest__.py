@@ -26,6 +26,8 @@
         "views/partner/portal_api_key_wizard_view.xml",
         "views/partner/zortout_order_view.xml",
         "views/partner/zortout_webhook_log_view.xml",
+        "views/partner/omisell_order_view.xml",
+        "views/partner/omisell_webhook_log_view.xml",
         "views/partner/action_view.xml",
         "views/user/table_view.xml",
         "views/user/search_view.xml",
