@@ -247,7 +247,7 @@ class PartnerOmisellIntegration(models.Model):
 
     @api.model
     def _normalize_omisell_phone(self, phone):
-        phone = (phone or "").strip()
+        phone = str(phone or "").strip()
         if not phone:
             return ""
         digits = "".join(char for char in phone if char.isdigit())
@@ -264,7 +264,7 @@ class PartnerOmisellIntegration(models.Model):
         receiver = order_detail.get("receiver") if isinstance(order_detail.get("receiver"), dict) else {}
 
         phone = self._normalize_omisell_phone(receiver.get("phone"))
-        email = (receiver.get("email") or "").strip().lower()
+        email = str(receiver.get("email") or "").strip().lower()
 
         if phone:
             user = user_model.search(domain_base + [("phone", "=", phone)], limit=1)
@@ -294,7 +294,7 @@ class PartnerOmisellIntegration(models.Model):
     def get_omisell_payment_status(self, order_detail):
         statuses = []
         for payment in self.get_omisell_payment_information(order_detail):
-            status = (payment.get("transaction_status") or "").strip()
+            status = str(payment.get("transaction_status") or "").strip()
             if status and status not in statuses:
                 statuses.append(status)
         return ", ".join(statuses)
@@ -302,7 +302,7 @@ class PartnerOmisellIntegration(models.Model):
     def get_omisell_payment_method(self, order_detail):
         methods = []
         for payment in self.get_omisell_payment_information(order_detail):
-            method = (
+            method = str(
                 payment.get("payment_method_name")
                 or payment.get("payment_method")
                 or payment.get("origin_payment_method")
@@ -345,7 +345,7 @@ class PartnerOmisellIntegration(models.Model):
         if status_id in OMISELL_ELIGIBLE_STATUS_IDS:
             return True
 
-        status_name = (
+        status_name = str(
             order_detail.get("status_name")
             or payload_data.get("status_name")
             or ""
