@@ -13,5 +13,7 @@ from . import warranty_status
 from . import warranty_comment
 from . import warranty
 from . import zortout_integration
+from . import zortout_contact_sync
+from . import zortout_member_sync
 from . import zortout_order
 from . import zortout_webhook_log
