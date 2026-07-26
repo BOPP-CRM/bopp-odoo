@@ -223,6 +223,7 @@ class PartnerOmisellOrder(models.Model):
             "points_revoked": True,
             "reward_points": revoked_reward_points,
             "user_id": user.id if user else False,
+            "message": f"หักคะแนนคืน {revoked_reward_points:g} แต้ม เนื่องจาก order #{order_label} ถูกยกเลิกหรือคืนสินค้า",
         }
 
     def _award_points(self, user, partner):

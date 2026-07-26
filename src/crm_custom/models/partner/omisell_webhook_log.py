@@ -31,6 +31,7 @@ class PartnerOmisellWebhookLog(models.Model):
     customer_phone = fields.Char(string="Customer Phone")
     customer_email = fields.Char(string="Customer Email")
     points_awarded = fields.Boolean(string="Points Awarded", default=False)
+    points_revoked = fields.Boolean(string="Points Revoked", default=False)
     reward_points = fields.Float(string="Reward Points")
     warning = fields.Char(string="Warning")
 
@@ -101,6 +102,7 @@ class PartnerOmisellWebhookLog(models.Model):
         warning = result.get("warning") or False
         result_status = result.get("status") or ("error" if http_status >= 400 else "ok")
         points_awarded = bool(result.get("points_awarded"))
+        points_revoked = bool(result.get("points_revoked"))
         reward_points = result.get("reward_points")
         if reward_points is None and order_record:
             reward_points = order_record.reward_points
@@ -144,6 +146,7 @@ class PartnerOmisellWebhookLog(models.Model):
             **payload_fields,
             **order_fields,
             "points_awarded": points_awarded,
+            "points_revoked": points_revoked,
             "reward_points": reward_points,
         })
 
@@ -196,6 +199,7 @@ class PartnerOmisellWebhookLog(models.Model):
             "customer_phone": self.customer_phone or False,
             "customer_email": self.customer_email or False,
             "points_awarded": bool(self.points_awarded),
+            "points_revoked": bool(self.points_revoked),
             "reward_points": reward_points,
             "member": member,
         }
