@@ -10,15 +10,17 @@ from odoo.exceptions import ValidationError
 
 OMISELL_API_BASE_URL = "https://api.omisell.com"
 OMISELL_AUTH_TOKEN_PATH = "/api/v2/auth/token/get/"
-OMISELL_ELIGIBLE_STATUS_IDS = {300, 350, 360, 400, 460, 500, 600, 900}
-OMISELL_ELIGIBLE_STATUS_NAMES = {
-    "approved",
-    "awaiting generate label",
-    "processing",
-    "ready to ship",
-    "shipped",
-    "delivering",
-    "completed",
+OMISELL_COMPLETED_STATUS_ID = 900
+OMISELL_COMPLETED_STATUS_NAME = "completed"
+OMISELL_VOID_STATUS_IDS = {700, 701, 702, 703, 708, 800, 850}
+OMISELL_VOID_STATUS_NAMES = {
+    "cancelled by seller",
+    "cancelled by operator",
+    "cancelled by partner",
+    "cancelled by system",
+    "cancelled by lost items at warehouse",
+    "returned",
+    "courier lost items",
 }
 
 
@@ -339,18 +341,34 @@ class PartnerOmisellIntegration(models.Model):
     def is_omisell_order_eligible_for_points(self, payload, order_detail):
         self.ensure_one()
         payload_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        detail = order_detail if isinstance(order_detail, dict) else {}
         status_id = self._parse_omisell_status_id(
-            order_detail.get("status_id") or payload_data.get("status_id")
+            detail.get("status_id") or payload_data.get("status_id")
         )
-        if status_id in OMISELL_ELIGIBLE_STATUS_IDS:
+        if status_id == OMISELL_COMPLETED_STATUS_ID:
             return True
 
         status_name = str(
-            order_detail.get("status_name")
-            or payload_data.get("status_name")
-            or ""
+            detail.get("status_name") or payload_data.get("status_name") or ""
         ).strip().lower()
-        return status_name in OMISELL_ELIGIBLE_STATUS_NAMES
+        return status_name == OMISELL_COMPLETED_STATUS_NAME
+
+    def is_omisell_order_voided(self, payload, order_detail=None):
+        self.ensure_one()
+        payload = payload or {}
+        payload_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        detail = order_detail if isinstance(order_detail, dict) else {}
+
+        status_id = self._parse_omisell_status_id(
+            detail.get("status_id") or payload_data.get("status_id")
+        )
+        if status_id in OMISELL_VOID_STATUS_IDS:
+            return True
+
+        status_name = str(
+            detail.get("status_name") or payload_data.get("status_name") or ""
+        ).strip().lower()
+        return status_name in OMISELL_VOID_STATUS_NAMES
 
     def _has_valid_omisell_access_token(self):
         self.ensure_one()

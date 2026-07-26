@@ -83,6 +83,9 @@ class PartnerOmisellOrder(models.Model):
         else:
             order = self.create(vals)
 
+        if order._should_revoke_points(partner, payload):
+            return order._revoke_points()
+
         try:
             order_detail = partner.fetch_omisell_order_detail(omisell_order_number)
         except Exception as error:
@@ -97,6 +100,9 @@ class PartnerOmisellOrder(models.Model):
             }
 
         order.write(self._prepare_order_vals(partner, payload, order_detail=order_detail))
+
+        if order._should_revoke_points(partner, payload, order_detail):
+            return order._revoke_points()
 
         if order.points_awarded:
             return {"status": "ok", "order_id": order.id, "points_awarded": False}
@@ -159,6 +165,64 @@ class PartnerOmisellOrder(models.Model):
             "seller_id": str(detail.get("seller_id") or payload.get("seller_id") or "").strip() or False,
             "last_webhook_at": fields.Datetime.now(),
             "error_message": False,
+        }
+
+    def _should_revoke_points(self, partner, payload, order_detail=None):
+        self.ensure_one()
+        return partner.is_omisell_order_voided(payload, order_detail)
+
+    def _revoke_points(self):
+        self.ensure_one()
+        if not self.points_awarded:
+            return {"status": "ok", "order_id": self.id, "points_revoked": False}
+
+        now = fields.Datetime.now()
+        spending_point = self.spending_point_id.exists()
+        reward_point = self.reward_point_id.exists()
+        revoked_reward_points = reward_point.value if reward_point else (self.reward_points or 0)
+        order_label = self.order_number or self.omisell_order_number
+        user = self.user_id
+
+        burn_vals_list = []
+        if spending_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} cancelled or returned",
+                "value": spending_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": spending_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if reward_point:
+            burn_vals_list.append({
+                "name": f"ลดคะแนนจาก {order_label}",
+                "admin_note": f"Order #{order_label} cancelled or returned",
+                "value": reward_point.value,
+                "type": "burn",
+                "given_date": now,
+                "currency_id": reward_point.currency_id.id,
+                "user_id": user.id,
+            })
+        if burn_vals_list:
+            self.env["crm.user.point"].create(burn_vals_list)
+
+        self.write({
+            "points_awarded": False,
+            "points_awarded_at": False,
+            "spending_point_id": False,
+            "reward_point_id": False,
+            "tier_convert_points": 0,
+            "reward_points": 0,
+            "error_message": False,
+        })
+
+        return {
+            "status": "ok",
+            "order_id": self.id,
+            "points_revoked": True,
+            "reward_points": revoked_reward_points,
+            "user_id": user.id if user else False,
         }
 
     def _award_points(self, user, partner):
