@@ -261,6 +261,7 @@ class PortalWarrantiesController(http.Controller):
             )
             if image_url is not None:
                 product.write({"image": image_url})
+            self._sync_product_sn_patterns(product, payload)
         except IntegrityError:
             request.env.cr.rollback()
             return json_response(
@@ -326,14 +327,17 @@ class PortalWarrantiesController(http.Controller):
                 status=400,
             )
 
-        if not vals:
+        patterns = self._extract_sn_patterns(payload)
+        if not vals and patterns is None:
             return json_response(
                 {"error": "invalid_request", "message": "ไม่มีข้อมูลสำหรับแก้ไข"},
                 status=400,
             )
 
         try:
-            product_response["product"].write(vals)
+            if vals:
+                product_response["product"].write(vals)
+            self._sync_product_sn_patterns(product_response["product"], payload)
         except IntegrityError:
             request.env.cr.rollback()
             return json_response(
@@ -687,6 +691,17 @@ class PortalWarrantiesController(http.Controller):
         status_response["status"].write({"active": False})
         return json_response({"success": True})
 
+    def _sync_product_sn_patterns(self, product, payload):
+        patterns = self._extract_sn_patterns(payload)
+        if patterns is None:
+            return
+        product.write_sn_patterns(patterns)
+
+    def _extract_sn_patterns(self, payload):
+        if "sn_patterns" in payload or "snPatterns" in payload:
+            return payload.get("sn_patterns", payload.get("snPatterns"))
+        return None
+
     def _resolve_product_image_url(self, partner, payload, product=None):
         image_base64 = payload.get("image_base64")
         if image_base64 is not None:
@@ -880,6 +895,14 @@ class PortalWarrantiesController(http.Controller):
             "sell_price": product.sell_price or 0,
             "image_url": product.image or False,
             "active": product.active,
+            "sn_patterns": [
+                {
+                    "id": pattern.id,
+                    "pattern": pattern.pattern,
+                    "sequence": pattern.sequence,
+                }
+                for pattern in product.sn_pattern_ids
+            ],
         }
 
     def _serialize_contributor(self, contributor):

@@ -344,6 +344,14 @@ class UserWarrantyController(http.Controller):
             "cost_price": product.cost_price or 0,
             "sell_price": product.sell_price or 0,
             "image_url": product.image or False,
+            "sn_patterns": [
+                {
+                    "id": pattern.id,
+                    "pattern": pattern.pattern,
+                    "sequence": pattern.sequence,
+                }
+                for pattern in product.sn_pattern_ids
+            ],
         }
 
     def _serialize_contributor(self, contributor):

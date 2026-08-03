@@ -19,6 +19,7 @@ access_crm_user_add_point_wizard,access.crm.user.add.point.wizard,model_crm_user
 access_crm_user_add_coupon_wizard,access.crm.user.add.coupon.wizard,model_crm_user_add_coupon_wizard,,1,1,1,1
 access_crm_partner_receipt_redeem,access.crm.partner.receipt.redeem,model_crm_partner_receipt_redeem,,1,1,1,1
 access_partner_warranty_product,access.partner.warranty.product,model_partner_warranty_product,,1,1,1,1
+access_partner_warranty_product_sn_pattern,access.partner.warranty.product.sn.pattern,model_partner_warranty_product_sn_pattern,,1,1,1,1
 access_partner_warranty_contributor,access.partner.warranty.contributor,model_partner_warranty_contributor,,1,1,1,1
 access_partner_warranty_status,access.partner.warranty.status,model_partner_warranty_status,,1,1,1,1
 access_partner_warranty_comment,access.partner.warranty.comment,model_partner_warranty_comment,,1,1,1,1

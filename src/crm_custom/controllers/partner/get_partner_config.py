@@ -129,6 +129,14 @@ class PartnerConfigController(http.Controller):
                     "description": product.description or False,
                     "sku": product.sku or False,
                     "image_url": product.image or False,
+                    "sn_patterns": [
+                        {
+                            "id": pattern.id,
+                            "pattern": pattern.pattern,
+                            "sequence": pattern.sequence,
+                        }
+                        for pattern in product.sn_pattern_ids
+                    ],
                 }
                 for product in products
             ],

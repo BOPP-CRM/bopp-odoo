@@ -22,6 +22,7 @@
         "views/partner/coupon_add_codes_wizard_view.xml",
         "views/partner/receipt_redeem_view.xml",
         "views/partner/warranty_view.xml",
+        "views/partner/warranty_product_view.xml",
         "views/partner/portal_user_wizard_view.xml",
         "views/partner/portal_api_key_wizard_view.xml",
         "views/partner/zortout_order_view.xml",
