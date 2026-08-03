@@ -8,6 +8,7 @@ from . import coupon_code
 from . import ads
 from . import receipt_redeem
 from . import warranty_product
+from . import warranty_product_sn_pattern
 from . import warranty_contributor
 from . import warranty_status
 from . import warranty_comment

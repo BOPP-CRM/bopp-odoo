@@ -153,6 +153,10 @@ class PartnerWarranty(models.Model):
 
         product = self._resolve_product(partner, int(product_id))
         contributor = self._resolve_contributor(partner, int(contributor_id))
+        if not product.matches_serial_number(serial_number):
+            raise ValidationError(
+                "Serial Number ไม่ตรงกับรูปแบบที่กำหนดสำหรับสินค้านี้"
+            )
         status = self.env["partner.warranty.status"].get_default_status(partner)
         if not status:
             raise ValidationError("ยังไม่ได้ตั้งค่าสถานะการรับประกัน")

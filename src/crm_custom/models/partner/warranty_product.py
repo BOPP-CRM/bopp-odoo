@@ -1,6 +1,8 @@
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from .warranty_product_sn_pattern import serial_matches_pattern
+
 DEFAULT_OTHER_PRODUCT_NAME = "อื่น ๆ"
 
 
@@ -32,6 +34,11 @@ class PartnerWarrantyProduct(models.Model):
         required=True,
         ondelete="cascade",
     )
+    sn_pattern_ids = fields.One2many(
+        "partner.warranty.product.sn.pattern",
+        "product_id",
+        string="Serial Number Patterns",
+    )
 
     _sql_constraints = [
         (
@@ -61,6 +68,53 @@ class PartnerWarrantyProduct(models.Model):
         for record in self:
             if record.cost_price < 0 or record.sell_price < 0:
                 raise ValidationError("ราคาต้องไม่ติดลบ")
+
+    def matches_serial_number(self, serial_number):
+        self.ensure_one()
+        patterns = self.sn_pattern_ids.mapped("pattern")
+        if not patterns:
+            return True
+        serial_number = (serial_number or "").strip()
+        return any(
+            serial_matches_pattern(serial_number, pattern)
+            for pattern in patterns
+        )
+
+    @api.model
+    def _normalize_sn_patterns(self, patterns):
+        if patterns is None:
+            return None
+
+        normalized = []
+        seen = set()
+        for item in patterns:
+            if isinstance(item, dict):
+                pattern = (item.get("pattern") or "").strip()
+            else:
+                pattern = str(item or "").strip()
+            if not pattern or pattern in seen:
+                continue
+            seen.add(pattern)
+            normalized.append(pattern)
+        return normalized
+
+    def write_sn_patterns(self, patterns):
+        self.ensure_one()
+        normalized = self._normalize_sn_patterns(patterns)
+        if normalized is None:
+            return
+
+        self.sn_pattern_ids.unlink()
+        if not normalized:
+            return
+
+        pattern_model = self.env["partner.warranty.product.sn.pattern"]
+        for index, pattern in enumerate(normalized):
+            pattern_model.create({
+                "product_id": self.id,
+                "pattern": pattern,
+                "sequence": (index + 1) * 10,
+            })
 
     @api.model
     def ensure_default_items(self, partner):
