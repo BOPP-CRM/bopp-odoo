@@ -16,7 +16,12 @@ run_as_odoo() {
 }
 
 install_python_dependencies
-envsubst < /etc/odoo/odoo.conf.template > /etc/odoo/odoo.conf
+
+if command -v envsubst >/dev/null 2>&1; then
+    envsubst < /etc/odoo/odoo.conf.template > /etc/odoo/odoo.conf
+else
+    cp /etc/odoo/odoo.conf.template /etc/odoo/odoo.conf
+fi
 
 if [ "$(id -u)" = "0" ]; then
     chown odoo:odoo /etc/odoo/odoo.conf

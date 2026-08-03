@@ -1,6 +1,7 @@
 import logging
 import math
 import os
+import re
 import secrets
 
 import requests
@@ -255,6 +256,44 @@ class PartnerZortoutIntegration(models.Model):
         )
 
     @api.model
+    def _normalize_zortout_res_code(self, value):
+        if value is None:
+            return None
+        text = str(value).strip()
+        if text.isdigit():
+            return text
+        match = re.match(r"^(\d+)", text)
+        return match.group(1) if match else text
+
+    @api.model
+    def _extract_zortout_res_code(self, data):
+        if not isinstance(data, dict):
+            return None
+
+        res_code = self._normalize_zortout_res_code(data.get("resCode"))
+        if res_code:
+            return res_code
+
+        res = data.get("res")
+        if isinstance(res, dict):
+            return self._normalize_zortout_res_code(res.get("resCode"))
+        return self._normalize_zortout_res_code(res)
+
+    @api.model
+    def _extract_zortout_res_desc(self, data):
+        if not isinstance(data, dict):
+            return ""
+
+        res_desc = data.get("resDesc")
+        if res_desc:
+            return str(res_desc)
+
+        res = data.get("res")
+        if isinstance(res, dict) and res.get("resDesc"):
+            return str(res["resDesc"])
+        return ""
+
+    @api.model
     def _parse_zortout_response(self, response):
         try:
             data = response.json()
@@ -264,20 +303,27 @@ class PartnerZortoutIntegration(models.Model):
         if not isinstance(data, dict):
             return False, "Zortout ตอบกลับข้อมูลไม่ถูกต้อง", {}
 
-        res_code = data.get("resCode")
-        if res_code is None and isinstance(data.get("res"), dict):
-            res_code = data["res"].get("resCode")
+        res_code = self._extract_zortout_res_code(data)
+        if res_code in {"200", "201"}:
+            return True, self._extract_zortout_res_desc(data) or "Success", data
 
-        if str(res_code) == "200":
-            return True, data.get("resDesc") or "Success", data
+        if response.ok and isinstance(data, dict) and data.get("id") and "list" not in data:
+            return True, self._extract_zortout_res_desc(data) or "Success", data
+
+        detail = data.get("detail")
+        if isinstance(detail, dict) and detail.get("id") and response.ok:
+            return True, self._extract_zortout_res_desc(data) or "Success", data
 
         if response.ok and self._is_zortout_webhook_config(data):
             return True, "Success", data
 
-        res_desc = data.get("resDesc")
-        if not res_desc and isinstance(data.get("res"), dict):
-            res_desc = data["res"].get("resDesc")
+        res_desc = self._extract_zortout_res_desc(data)
         if not res_desc:
+            _logger.warning(
+                "Zortout API unexpected response (status=%s): %s",
+                response.status_code,
+                data,
+            )
             res_desc = "Zortout API request failed"
         return False, res_desc, data
 

@@ -281,6 +281,32 @@
                             </field>
                         </page>
 
+                        <page string="Omisell" name="omisell">
+                            <group string="Webhook Integration">
+                                <field name="omisell_enabled" widget="boolean_toggle"/>
+                                <field name="omisell_webhook_token" readonly="1"/>
+                                <field name="omisell_webhook_secret" readonly="1"/>
+                                <field name="omisell_api_key"/>
+                                <field name="omisell_api_secret"/>
+                                <field name="omisell_seller_id"/>
+                                <field name="omisell_country"/>
+                                <field name="omisell_api_base_url"/>
+                            </group>
+                            <field name="omisell_order_ids" nolabel="1">
+                                <list create="0" delete="0" edit="0">
+                                    <field name="order_number"/>
+                                    <field name="omisell_order_number"/>
+                                    <field name="customer_phone"/>
+                                    <field name="amount"/>
+                                    <field name="payment_status"/>
+                                    <field name="order_status_name"/>
+                                    <field name="points_awarded"/>
+                                    <field name="reward_points"/>
+                                    <field name="last_webhook_at"/>
+                                </list>
+                            </field>
+                        </page>
+
                         <page string="Warranty" name="warranty" invisible="not ui_warranty_enabled">
                             <notebook>
                                 <page string="Registrations" name="warranty_registrations">
