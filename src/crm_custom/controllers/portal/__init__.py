@@ -6,6 +6,7 @@ from . import currencies
 from . import redeem_qrcodes
 from . import receipts
 from . import sales
+from . import openai
 from . import warranties
 from . import team
 from . import dashboard

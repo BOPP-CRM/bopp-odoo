@@ -8,6 +8,8 @@ from . import coupon_code
 from . import ads
 from . import receipt_redeem
 from . import partner_sale
+from . import openai_integration
+from . import receipt_sale_sync
 from . import warranty_product
 from . import warranty_product_sn_pattern
 from . import warranty_contributor

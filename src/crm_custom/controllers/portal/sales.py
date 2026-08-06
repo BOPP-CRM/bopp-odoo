@@ -2,6 +2,8 @@ from odoo import fields, http
 from odoo.exceptions import ValidationError
 from odoo.http import request
 
+import json
+
 from ....util.portal_auth import get_authenticated_portal_user, get_portal_admin_from_request
 from ....util.request import json_response
 
@@ -21,7 +23,7 @@ class PortalSalesController(http.Controller):
             domain.append(("status", "=", status))
 
         source = (kwargs.get("source") or "").strip().lower()
-        if source in {"zortout", "omisell", "manual", "other"}:
+        if source in {"zortout", "omisell", "receipt", "manual", "other"}:
             domain.append(("source", "=", source))
 
         user_id = self._parse_int(kwargs.get("user_id"))
@@ -174,6 +176,190 @@ class PortalSalesController(http.Controller):
             "job": job.serialize_for_portal(),
         })
 
+    @http.route(
+        "/api/portal/sales/sync-receipts/status",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_receipt_sale_sync_status(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.receipt.sale.sync.job"].sudo()
+        return json_response({
+            "missing_count": job_model.count_missing_sales_for_partner(partner),
+            "openai_configured": partner.serialize_openai_status()["configured"],
+            "active_job": job_model.get_active_job_for_partner(partner),
+        })
+
+    @http.route(
+        "/api/portal/sales/sync-receipts",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def start_receipt_sale_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload, parse_error = self._parse_json_payload()
+        if parse_error:
+            return parse_error
+        confirm_error = self._require_ai_confirmed(payload)
+        if confirm_error:
+            return confirm_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.receipt.sale.sync.job"].sudo()
+        try:
+            job = job_model.start_sync_for_partner(partner)
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+            "message": "เริ่ม sync ใบเสร็จไปรายการขายด้วย AI แล้ว",
+        }, status=201)
+
+    @http.route(
+        "/api/portal/sales/sync-receipts/active",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_active_receipt_sale_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.receipt.sale.sync.job"].sudo()
+        return json_response({
+            "job": job_model.get_active_job_for_partner(partner),
+        })
+
+    @http.route(
+        "/api/portal/sales/sync-receipts/<int:job_id>",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_receipt_sale_sync_job(self, job_id, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job = request.env["partner.receipt.sale.sync.job"].sudo().search([
+            ("id", "=", job_id),
+            ("partner_id", "=", partner.id),
+        ], limit=1)
+        if not job:
+            return json_response(
+                {"error": "job_not_found", "message": "ไม่พบงาน sync ดังกล่าว"},
+                status=404,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+        })
+
+    @http.route(
+        "/api/portal/sales/<int:sale_id>/regenerate-ai",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def regenerate_sale_with_ai(self, sale_id, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload, parse_error = self._parse_json_payload()
+        if parse_error:
+            return parse_error
+        confirm_error = self._require_ai_confirmed(payload)
+        if confirm_error:
+            return confirm_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        sale_response = self._get_sale(partner, sale_id)
+        if sale_response["error"]:
+            return sale_response["error"]
+
+        sale = sale_response["sale"]
+        if sale.source != "receipt" or not sale.receipt_redeem_id:
+            return json_response(
+                {
+                    "error": "sale_not_allowed",
+                    "message": "สามารถ regenerate ได้เฉพาะรายการขายจากใบเสร็จ (AI)",
+                },
+                status=400,
+            )
+
+        receipt = sale.receipt_redeem_id
+        sale_model = request.env["partner.sale"].sudo()
+        try:
+            sale_model.sync_receipt_with_openai(
+                partner,
+                receipt,
+                regenerate=True,
+            )
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        sale = request.env["partner.sale"].sudo().browse(sale.id)
+        return json_response({
+            "sale": self._serialize_sale(sale, include_lines=True),
+            "message": "สร้างข้อมูลรายการขายจาก AI ใหม่แล้ว",
+        })
+
+    def _parse_json_payload(self):
+        try:
+            payload = json.loads(request.httprequest.get_data(as_text=True) or "{}")
+        except json.JSONDecodeError:
+            return None, json_response(
+                {"error": "invalid_json", "message": "Invalid JSON body."},
+                status=400,
+            )
+        if not isinstance(payload, dict):
+            payload = {}
+        return payload, None
+
+    def _require_ai_confirmed(self, payload):
+        confirmed = payload.get("ai_confirmed")
+        if confirmed is True or str(confirmed).lower() in {"true", "1", "yes"}:
+            return None
+        return json_response(
+            {
+                "error": "ai_confirmation_required",
+                "message": "กรุณายืนยันความถูกต้องของข้อมูลที่ AI สร้างก่อนดำเนินการ",
+            },
+            status=400,
+        )
+
     def _parse_int(self, value):
         try:
             return int(value)
@@ -219,6 +405,11 @@ class PortalSalesController(http.Controller):
             "customer_email": sale.customer_email or False,
             "last_sync_at": fields.Datetime.to_string(sale.last_sync_at) if sale.last_sync_at else False,
             "receipt_redeem_id": sale.receipt_redeem_id.id if sale.receipt_redeem_id else False,
+            "ai_generated": bool(sale.ai_generated),
+            "ai_generated_at": fields.Datetime.to_string(sale.ai_generated_at)
+            if sale.ai_generated_at
+            else False,
+            "can_regenerate_ai": sale.source == "receipt" and bool(sale.receipt_redeem_id),
             "user": self._serialize_member(user) if user else False,
         }
 

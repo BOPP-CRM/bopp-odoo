@@ -38,3 +38,4 @@ access_partner_zortout_member_sync_job,access.partner.zortout.member.sync.job,mo
 access_partner_sale,access.partner.sale,model_partner_sale,,1,1,1,1
 access_partner_sale_line,access.partner.sale.line,model_partner_sale_line,,1,1,1,1
 access_partner_zortout_sale_sync_job,access.partner.zortout.sale.sync.job,model_partner_zortout_sale_sync_job,,1,1,1,1
+access_partner_receipt_sale_sync_job,access.partner.receipt.sale.sync.job,model_partner_receipt_sale_sync_job,,1,1,1,1

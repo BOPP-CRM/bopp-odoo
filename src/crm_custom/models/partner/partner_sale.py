@@ -48,6 +48,7 @@ class PartnerSale(models.Model):
         [
             ("zortout", "Zortout"),
             ("omisell", "Omisell"),
+            ("receipt", "Receipt (AI)"),
             ("manual", "Manual"),
             ("other", "Other"),
         ],
@@ -106,10 +107,13 @@ class PartnerSale(models.Model):
         string="Lines",
     )
     source_label = fields.Char(string="Source Label", compute="_compute_source_label")
+    ai_generated = fields.Boolean(string="AI Generated", default=False, tracking=True)
+    ai_generated_at = fields.Datetime(string="AI Generated At", tracking=True)
 
     SOURCE_LABELS = {
         "zortout": "Zortout",
         "omisell": "Omisell",
+        "receipt": "ใบเสร็จ (AI)",
         "manual": "Manual",
         "other": "Other",
     }
@@ -149,6 +153,153 @@ class PartnerSale(models.Model):
         return paid_orders.filtered(
             lambda order: str(order.zortout_order_id) not in existing_external_ids
         )
+
+    @api.model
+    def find_receipts_missing_sale(self, partner):
+        receipt_model = self.env["crm.partner.receipt.redeem"].sudo()
+        receipts = receipt_model.search([
+            ("partner_id", "=", partner.id),
+            ("state", "=", "approved"),
+            ("receipt_image", "!=", False),
+            ("zortout_order_id", "=", False),
+        ], order="reviewed_date asc, id asc")
+        if not receipts:
+            return receipt_model.browse()
+
+        synced_receipt_ids = set(
+            self.search([
+                ("partner_id", "=", partner.id),
+                ("receipt_redeem_id", "in", receipts.ids),
+            ]).mapped("receipt_redeem_id").ids
+        )
+        return receipts.filtered(lambda receipt: receipt.id not in synced_receipt_ids)
+
+    @api.model
+    def _receipt_external_id(self, receipt_id):
+        return f"receipt-{int(receipt_id)}"
+
+    @api.model
+    def sync_from_receipt_ai(self, partner, receipt, ai_data, regenerate=False):
+        receipt.ensure_one()
+        external_id = self._receipt_external_id(receipt.id)
+        sale = self.search([
+            ("partner_id", "=", partner.id),
+            ("source", "=", "receipt"),
+            ("external_id", "=", external_id),
+        ], limit=1)
+
+        if sale and not regenerate:
+            return {"status": "skipped", "sale_id": sale.id}
+
+        now = fields.Datetime.now()
+        user = receipt.user_id
+        line_commands = self._build_receipt_ai_line_commands(partner, ai_data)
+        amount = partner._parse_zortout_amount(
+            ai_data.get("amount") if ai_data.get("amount") is not None else receipt.amount
+        )
+        payment_amount_raw = ai_data.get("paymentamount")
+        if payment_amount_raw is None:
+            payment_amount_raw = ai_data.get("payment_amount")
+        payment_amount = partner._parse_zortout_amount(
+            payment_amount_raw if payment_amount_raw is not None else amount
+        )
+
+        vals = {
+            "partner_id": partner.id,
+            "source": "receipt",
+            "external_id": external_id,
+            "order_number": (
+                ai_data.get("order_number")
+                or ai_data.get("orderNumber")
+                or receipt.receipt_number
+            ),
+            "status": "paid",
+            "discount": self._parse_ai_amount(partner, ai_data.get("discount")),
+            "vat_amount": self._parse_ai_amount(partner, ai_data.get("vat_amount")),
+            "amount": amount,
+            "payment_amount": payment_amount,
+            "payment_status": ai_data.get("payment_status") or ai_data.get("paymentstatus") or "Paid",
+            "customer_name": user.display_name if user else False,
+            "customer_phone": user.phone if user else False,
+            "customer_email": user.email if user else False,
+            "user_id": user.id if user else False,
+            "receipt_redeem_id": receipt.id,
+            "order_date": self._parse_ai_order_date(ai_data, receipt),
+            "last_sync_at": now,
+            "ai_generated": True,
+            "ai_generated_at": now,
+            "line_ids": [(5, 0, 0)] + line_commands,
+        }
+
+        if sale:
+            sale.write(vals)
+        else:
+            sale = self.create(vals)
+
+        return {"status": "ok", "sale_id": sale.id}
+
+    @api.model
+    def sync_receipt_with_openai(self, partner, receipt, regenerate=False):
+        if not regenerate:
+            existing = self.search([
+                ("partner_id", "=", partner.id),
+                ("receipt_redeem_id", "=", receipt.id),
+            ], limit=1)
+            if existing:
+                return {"status": "skipped", "sale_id": existing.id}
+
+        ai_data = partner.extract_receipt_sale_data_with_openai(receipt)
+        return self.sync_from_receipt_ai(partner, receipt, ai_data, regenerate=regenerate)
+
+    @api.model
+    def _build_receipt_ai_line_commands(self, partner, ai_data):
+        lines = ai_data.get("items") or ai_data.get("list") or []
+        commands = []
+        for index, item in enumerate(lines):
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name") or item.get("description") or "Unknown Product"
+            commands.append((0, 0, {
+                "sequence": (index + 1) * 10,
+                "external_product_id": 0,
+                "sku": item.get("sku") or False,
+                "name": name,
+                "quantity": self._parse_ai_amount(partner, item.get("quantity"), default=1.0),
+                "price_per_unit": self._parse_ai_amount(
+                    partner,
+                    item.get("price_per_unit") if item.get("price_per_unit") is not None else item.get("unitPrice"),
+                ),
+                "discount": self._parse_ai_amount(partner, item.get("discount")),
+                "total_price": self._parse_ai_amount(
+                    partner,
+                    item.get("total_price") if item.get("total_price") is not None else item.get("amount"),
+                ),
+            }))
+        return commands
+
+    @staticmethod
+    def _parse_ai_amount(partner, value, default=0.0):
+        if value is None or value == "":
+            return default
+        return partner._parse_zortout_amount(value)
+
+    @staticmethod
+    def _parse_ai_order_date(ai_data, receipt):
+        order_date = (
+            ai_data.get("order_date")
+            or ai_data.get("orderDate")
+            or ai_data.get("date")
+        )
+        if order_date:
+            try:
+                return fields.Date.to_date(str(order_date)[:10])
+            except (TypeError, ValueError):
+                pass
+        if receipt.submitted_date:
+            return fields.Date.to_date(receipt.submitted_date)
+        if receipt.reviewed_date:
+            return fields.Date.to_date(receipt.reviewed_date)
+        return False
 
     @api.model
     def sync_from_zortout_webhook(self, partner, method, payload, zortout_order=None):
