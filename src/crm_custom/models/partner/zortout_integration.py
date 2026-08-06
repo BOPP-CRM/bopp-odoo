@@ -294,6 +294,22 @@ class PartnerZortoutIntegration(models.Model):
         return ""
 
     @api.model
+    def _is_zortout_order_payload(self, data):
+        if not isinstance(data, dict):
+            return False
+        order_id = data.get("id")
+        if order_id is None:
+            return False
+        try:
+            int(order_id)
+        except (TypeError, ValueError):
+            return False
+        return any(
+            marker in data
+            for marker in ("paymentstatus", "orderdateString", "number", "status")
+        )
+
+    @api.model
     def _parse_zortout_response(self, response):
         try:
             data = response.json()
@@ -307,7 +323,7 @@ class PartnerZortoutIntegration(models.Model):
         if res_code in {"200", "201"}:
             return True, self._extract_zortout_res_desc(data) or "Success", data
 
-        if response.ok and isinstance(data, dict) and data.get("id") and "list" not in data:
+        if response.ok and self._is_zortout_order_payload(data):
             return True, self._extract_zortout_res_desc(data) or "Success", data
 
         detail = data.get("detail")
@@ -534,6 +550,9 @@ class PartnerZortoutIntegration(models.Model):
     def _extract_zortout_order_payload(self, data):
         if not isinstance(data, dict):
             return {}
+
+        if self._is_zortout_order_payload(data):
+            return data
 
         if data.get("id"):
             return data
