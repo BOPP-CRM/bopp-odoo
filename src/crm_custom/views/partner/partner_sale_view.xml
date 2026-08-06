@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_sale_tree" model="ir.ui.view">
+        <field name="name">partner.sale.tree</field>
+        <field name="model">partner.sale</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="order_number"/>
+                <field name="source"/>
+                <field name="source_label"/>
+                <field name="external_id"/>
+                <field name="order_date"/>
+                <field name="customer_name"/>
+                <field name="user_id"/>
+                <field name="amount"/>
+                <field name="payment_status"/>
+                <field name="status"/>
+                <field name="last_sync_at"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_partner_sale_form" model="ir.ui.view">
+        <field name="name">partner.sale.form</field>
+        <field name="model">partner.sale</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id" readonly="1"/>
+                            <field name="source" readonly="1"/>
+                            <field name="external_id" readonly="1"/>
+                            <field name="order_number" readonly="1"/>
+                            <field name="status" readonly="1"/>
+                            <field name="order_date" readonly="1"/>
+                            <field name="last_sync_at" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="amount" readonly="1"/>
+                            <field name="discount" readonly="1"/>
+                            <field name="vat_amount" readonly="1"/>
+                            <field name="payment_amount" readonly="1"/>
+                            <field name="payment_status" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Customer">
+                        <field name="customer_name" readonly="1"/>
+                        <field name="customer_phone" readonly="1"/>
+                        <field name="customer_email" readonly="1"/>
+                        <field name="user_id" readonly="1"/>
+                    </group>
+                    <group string="Links">
+                        <field name="zortout_order_id" readonly="1"/>
+                        <field name="receipt_redeem_id" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Lines">
+                            <field name="line_ids" readonly="1">
+                                <list>
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="external_product_id"/>
+                                    <field name="sku"/>
+                                    <field name="name"/>
+                                    <field name="quantity"/>
+                                    <field name="price_per_unit"/>
+                                    <field name="discount"/>
+                                    <field name="total_price"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_sale" model="ir.actions.act_window">
+        <field name="name">Partner Sales</field>
+        <field name="res_model">partner.sale</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

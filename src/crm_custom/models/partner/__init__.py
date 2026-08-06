@@ -7,6 +7,7 @@ from . import coupon
 from . import coupon_code
 from . import ads
 from . import receipt_redeem
+from . import partner_sale
 from . import warranty_product
 from . import warranty_product_sn_pattern
 from . import warranty_contributor
@@ -17,6 +18,7 @@ from . import zortout_integration
 from . import zortout_contact_sync
 from . import zortout_member_sync
 from . import zortout_order
+from . import zortout_sale_sync
 from . import zortout_webhook_log
 from . import omisell_integration
 from . import omisell_order

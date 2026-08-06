@@ -1,6 +1,6 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.42",
+    "version": "1.0.44",
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
@@ -21,6 +21,7 @@
         "views/partner/coupon_create_wizard_view.xml",
         "views/partner/coupon_add_codes_wizard_view.xml",
         "views/partner/receipt_redeem_view.xml",
+        "views/partner/partner_sale_view.xml",
         "views/partner/warranty_view.xml",
         "views/partner/warranty_product_view.xml",
         "views/partner/portal_user_wizard_view.xml",
@@ -31,6 +32,7 @@
         "views/partner/omisell_webhook_log_view.xml",
         "views/partner/zortout_member_sync_job_view.xml",
         "data/zortout_member_sync_cron.xml",
+        "data/zortout_sale_sync_cron.xml",
         "views/partner/action_view.xml",
         "views/user/table_view.xml",
         "views/user/search_view.xml",

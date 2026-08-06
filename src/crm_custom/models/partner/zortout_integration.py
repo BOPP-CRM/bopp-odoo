@@ -521,6 +521,74 @@ class PartnerZortoutIntegration(models.Model):
             return 0
         return tier.convert_points
 
+    def _ensure_zortout_api_credentials(self):
+        self.ensure_one()
+        if not self.zortout_enabled:
+            raise ValidationError("ยังไม่ได้เปิดใช้งาน Zortout")
+        if not self.zortout_store_name:
+            raise ValidationError("ยังไม่ได้บันทึก Store Name จาก ZORT")
+        if not self.zortout_api_key or not self.zortout_api_secret:
+            raise ValidationError("ยังไม่ได้เชื่อมต่อ Zortout API credentials")
+
+    @api.model
+    def _extract_zortout_order_payload(self, data):
+        if not isinstance(data, dict):
+            return {}
+
+        if data.get("id"):
+            return data
+
+        detail = data.get("detail")
+        if isinstance(detail, dict) and detail.get("id"):
+            return detail
+
+        order_list = data.get("list")
+        if isinstance(order_list, list) and order_list:
+            first = order_list[0]
+            if isinstance(first, dict) and first.get("id"):
+                return first
+
+        return {}
+
+    def fetch_zortout_order_detail(self, order_id):
+        self.ensure_one()
+        self._ensure_zortout_api_credentials()
+
+        try:
+            order_id = int(order_id)
+        except (TypeError, ValueError):
+            raise ValidationError("รหัสออเดอร์ Zortout ไม่ถูกต้อง")
+
+        try:
+            response = requests.get(
+                f"{ZORTOUT_API_BASE_URL}/Order/GetOrderDetail",
+                headers=self._zortout_request_headers(
+                    self.zortout_store_name,
+                    self.zortout_api_key,
+                    self.zortout_api_secret,
+                ),
+                params={"id": order_id},
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            _logger.warning(
+                "Zortout GetOrderDetail failed for partner %s order %s: %s",
+                self.id,
+                order_id,
+                error,
+            )
+            raise ValidationError("ไม่สามารถเชื่อมต่อ Zortout API ได้") from error
+
+        ok, message, data = self._parse_zortout_response(response)
+        if not ok:
+            raise ValidationError(message or "ไม่สามารถดึงข้อมูลออเดอร์จาก Zortout ได้")
+
+        payload = self._extract_zortout_order_payload(data)
+        if not payload:
+            raise ValidationError("ไม่พบข้อมูลออเดอร์จาก Zortout")
+
+        return payload
+
     def process_zortout_webhook(self, method, payload):
         self.ensure_one()
         order_model = self.env["partner.zortout.order"].sudo()

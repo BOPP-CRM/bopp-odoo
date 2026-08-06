@@ -102,6 +102,13 @@ class PartnerZortoutOrder(models.Model):
         else:
             order = self.create(vals)
 
+        self.env["partner.sale"].sudo().sync_from_zortout_webhook(
+            partner,
+            method,
+            payload,
+            order,
+        )
+
         if order._should_revoke_points(partner, payload):
             return order._revoke_points()
 
@@ -149,6 +156,12 @@ class PartnerZortoutOrder(models.Model):
             "order_status": "Deleted",
             "error_message": False,
         })
+        self.env["partner.sale"].sudo().sync_from_zortout_webhook(
+            partner,
+            "DELETEORDER",
+            payload,
+            order,
+        )
         result = order._revoke_points()
         result["order_id"] = order.id
         return result
@@ -332,6 +345,17 @@ class PartnerZortoutOrder(models.Model):
             "reward_points": reward_value,
             "error_message": False,
         })
+
+        sale = self.env["partner.sale"].sudo().search([
+            ("partner_id", "=", partner.id),
+            ("source", "=", "zortout"),
+            ("external_id", "=", str(self.zortout_order_id)),
+        ], limit=1)
+        if sale:
+            sale.write({
+                "user_id": user.id,
+                "receipt_redeem_id": receipt.id,
+            })
 
         return {
             "status": "ok",
