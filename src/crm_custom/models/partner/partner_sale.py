@@ -202,34 +202,34 @@ class PartnerSale(models.Model):
             user.email or "",
         )
 
-    def _export_order_row(self, sale):
-        member_name, member_phone, member_email = self._export_member_values(sale.user_id)
+    def _export_order_row(self):
+        member_name, member_phone, member_email = self._export_member_values(self.user_id)
         return [
-            sale.id,
-            self._export_text(sale.order_number),
-            self._export_text(sale.external_id),
-            self.SOURCE_LABELS.get(sale.source, sale.source or ""),
-            fields.Date.to_string(sale.order_date) if sale.order_date else "",
-            self.STATUS_LABELS.get(sale.status, sale.status or ""),
-            self._export_text(sale.customer_name),
-            self._export_text(sale.customer_phone),
-            self._export_text(sale.customer_email),
+            self.id,
+            self._export_text(self.order_number),
+            self._export_text(self.external_id),
+            self.SOURCE_LABELS.get(self.source, self.source or ""),
+            fields.Date.to_string(self.order_date) if self.order_date else "",
+            self.STATUS_LABELS.get(self.status, self.status or ""),
+            self._export_text(self.customer_name),
+            self._export_text(self.customer_phone),
+            self._export_text(self.customer_email),
             member_name,
             member_phone,
             member_email,
-            self._export_number(sale.discount),
-            self._export_number(sale.vat_amount),
-            self._export_number(sale.amount),
-            self._export_number(sale.payment_amount),
-            self._export_text(sale.payment_status),
+            self._export_number(self.discount),
+            self._export_number(self.vat_amount),
+            self._export_number(self.amount),
+            self._export_number(self.payment_amount),
+            self._export_text(self.payment_status),
         ]
 
-    def _export_line_row(self, sale, line):
-        member_name, member_phone, member_email = self._export_member_values(sale.user_id)
+    def _export_line_row(self, line):
+        member_name, member_phone, member_email = self._export_member_values(self.user_id)
         return [
-            sale.id,
-            self._export_text(sale.order_number or sale.external_id),
-            fields.Date.to_string(sale.order_date) if sale.order_date else "",
+            self.id,
+            self._export_text(self.order_number or self.external_id),
+            fields.Date.to_string(self.order_date) if self.order_date else "",
             self._export_text(line.sku),
             self._export_text(line.name),
             self._export_number(line.external_product_id),
