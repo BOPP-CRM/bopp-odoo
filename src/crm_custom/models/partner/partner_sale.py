@@ -1,4 +1,8 @@
 from odoo import api, fields, models
+from calendar import monthrange
+from io import BytesIO
+
+from openpyxl import Workbook
 
 
 class PartnerSaleLine(models.Model):
@@ -117,11 +121,157 @@ class PartnerSale(models.Model):
         "manual": "Manual",
         "other": "Other",
     }
+    STATUS_LABELS = {
+        "paid": "ชำระแล้ว",
+        "void": "ยกเลิก",
+    }
+    EXPORT_ORDER_HEADERS = [
+        "รหัสรายการ",
+        "เลขที่ออเดอร์",
+        "รหัสอ้างอิง",
+        "แหล่งที่มา",
+        "วันที่",
+        "สถานะ",
+        "ชื่อลูกค้า",
+        "เบอร์ลูกค้า",
+        "อีเมลลูกค้า",
+        "ชื่อสมาชิก",
+        "เบอร์สมาชิก",
+        "อีเมลสมาชิก",
+        "ส่วนลด",
+        "VAT",
+        "ยอดรวม",
+        "ยอดชำระ",
+        "สถานะการชำระ",
+    ]
+    EXPORT_LINE_HEADERS = [
+        "รหัสรายการ",
+        "เลขที่ออเดอร์",
+        "วันที่",
+        "SKU",
+        "ชื่อสินค้า",
+        "รหัสสินค้า",
+        "จำนวน",
+        "ราคาต่อหน่วย",
+        "ส่วนลด",
+        "ราคารวม",
+        "ชื่อสมาชิก",
+        "เบอร์สมาชิก",
+        "อีเมลสมาชิก",
+    ]
 
     @api.depends("source")
     def _compute_source_label(self):
         for record in self:
             record.source_label = self.SOURCE_LABELS.get(record.source, record.source or "")
+
+    @staticmethod
+    def _validate_export_month(year, month):
+        if not isinstance(year, int) or year < 2000 or year > 2100:
+            raise ValueError("invalid_year")
+        if not isinstance(month, int) or month < 1 or month > 12:
+            raise ValueError("invalid_month")
+
+    @staticmethod
+    def _month_date_range(year, month):
+        PartnerSale._validate_export_month(year, month)
+        first_day = fields.Date.from_string(f"{year:04d}-{month:02d}-01")
+        last_day = fields.Date.from_string(
+            f"{year:04d}-{month:02d}-{monthrange(year, month)[1]:02d}"
+        )
+        return first_day, last_day
+
+    @staticmethod
+    def _export_text(value):
+        if value is False or value is None:
+            return ""
+        return value
+
+    @staticmethod
+    def _export_number(value):
+        if value in (False, None):
+            return 0
+        return value
+
+    def _export_member_values(self, user):
+        if not user:
+            return "", "", ""
+        return (
+            user.display_name or "",
+            user.phone or "",
+            user.email or "",
+        )
+
+    def _export_order_row(self, sale):
+        member_name, member_phone, member_email = self._export_member_values(sale.user_id)
+        return [
+            sale.id,
+            self._export_text(sale.order_number),
+            self._export_text(sale.external_id),
+            self.SOURCE_LABELS.get(sale.source, sale.source or ""),
+            fields.Date.to_string(sale.order_date) if sale.order_date else "",
+            self.STATUS_LABELS.get(sale.status, sale.status or ""),
+            self._export_text(sale.customer_name),
+            self._export_text(sale.customer_phone),
+            self._export_text(sale.customer_email),
+            member_name,
+            member_phone,
+            member_email,
+            self._export_number(sale.discount),
+            self._export_number(sale.vat_amount),
+            self._export_number(sale.amount),
+            self._export_number(sale.payment_amount),
+            self._export_text(sale.payment_status),
+        ]
+
+    def _export_line_row(self, sale, line):
+        member_name, member_phone, member_email = self._export_member_values(sale.user_id)
+        return [
+            sale.id,
+            self._export_text(sale.order_number or sale.external_id),
+            fields.Date.to_string(sale.order_date) if sale.order_date else "",
+            self._export_text(line.sku),
+            self._export_text(line.name),
+            self._export_number(line.external_product_id),
+            self._export_number(line.quantity),
+            self._export_number(line.price_per_unit),
+            self._export_number(line.discount),
+            self._export_number(line.total_price),
+            member_name,
+            member_phone,
+            member_email,
+        ]
+
+    @api.model
+    def get_export_filename(self, year, month):
+        self._validate_export_month(year, month)
+        return f"sales_{year:04d}-{month:02d}.xlsx"
+
+    @api.model
+    def build_monthly_export_xlsx(self, partner, year, month):
+        first_day, last_day = self._month_date_range(year, month)
+        sales = self.search([
+            ("partner_id", "=", partner.id),
+            ("order_date", ">=", first_day),
+            ("order_date", "<=", last_day),
+        ], order="order_date desc, id desc")
+
+        workbook = Workbook()
+        order_sheet = workbook.active
+        order_sheet.title = "order"
+        line_sheet = workbook.create_sheet("order line")
+
+        order_sheet.append(self.EXPORT_ORDER_HEADERS)
+        line_sheet.append(self.EXPORT_LINE_HEADERS)
+
+        for sale in sales:
+            order_sheet.append(sale._export_order_row())
+            for line in sale.line_ids.sorted("sequence, id"):
+                line_sheet.append(sale._export_line_row(line))
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        return buffer.getvalue()
 
     @api.model
     def is_zortout_sale_exists(self, partner, zortout_order_id):

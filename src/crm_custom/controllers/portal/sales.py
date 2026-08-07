@@ -5,7 +5,7 @@ from odoo.http import request
 import json
 
 from ....util.portal_auth import get_authenticated_portal_user, get_portal_admin_from_request
-from ....util.request import json_response
+from ....util.request import json_response, xlsx_response
 
 
 class PortalSalesController(http.Controller):
@@ -56,6 +56,50 @@ class PortalSalesController(http.Controller):
             "sales": [self._serialize_sale(sale, include_lines=False) for sale in sales],
             "total": total,
         })
+
+    @http.route(
+        "/api/portal/sales/export",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def export_sales(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        year = self._parse_int(kwargs.get("year"))
+        month = self._parse_int(kwargs.get("month"))
+        if not year or not month:
+            return json_response(
+                {
+                    "error": "invalid_params",
+                    "message": "กรุณาระบุ year และ month ให้ครบถ้วน",
+                },
+                status=400,
+            )
+
+        sale_model = request.env["partner.sale"].sudo()
+        try:
+            sale_model._validate_export_month(year, month)
+            content = sale_model.build_monthly_export_xlsx(
+                portal_user.crm_partner_id,
+                year,
+                month,
+            )
+            filename = sale_model.get_export_filename(year, month)
+        except ValueError:
+            return json_response(
+                {
+                    "error": "invalid_params",
+                    "message": "เดือนหรือปีที่เลือกไม่ถูกต้อง",
+                },
+                status=400,
+            )
+
+        return xlsx_response(content, filename)
 
     @http.route("/api/portal/sales/<int:sale_id>", type="http", auth="public", methods=["GET"], csrf=False, cors="*")
     def get_sale(self, sale_id, **kwargs):

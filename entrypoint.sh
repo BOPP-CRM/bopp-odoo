@@ -3,7 +3,7 @@ set -e
 
 install_python_dependencies() {
     if [ "$(id -u)" = "0" ]; then
-        python3 -m pip install --break-system-packages -q boto3 python-barcode
+        python3 -m pip install --break-system-packages -q boto3 python-barcode openpyxl
     fi
 }
 

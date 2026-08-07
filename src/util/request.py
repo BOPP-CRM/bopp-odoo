@@ -36,3 +36,20 @@ def csv_response(content, filename, status=200):
             ("Content-Disposition", _attachment_content_disposition(filename)),
         ],
     )
+
+
+def xlsx_response(content, filename, status=200):
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+
+    return Response(
+        content,
+        status=status,
+        headers=[
+            (
+                "Content-Type",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+            ("Content-Disposition", _attachment_content_disposition(filename)),
+        ],
+    )
