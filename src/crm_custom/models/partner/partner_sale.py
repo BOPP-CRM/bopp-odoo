@@ -266,7 +266,7 @@ class PartnerSale(models.Model):
 
         for sale in sales:
             order_sheet.append(sale._export_order_row())
-            for line in sale.line_ids.sorted("sequence, id"):
+            for line in sale.line_ids:
                 line_sheet.append(sale._export_line_row(line))
 
         buffer = BytesIO()
