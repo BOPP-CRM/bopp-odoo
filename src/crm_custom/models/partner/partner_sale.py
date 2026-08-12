@@ -1,5 +1,6 @@
 from odoo import api, fields, models
 from calendar import monthrange
+from datetime import datetime
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -98,6 +99,11 @@ class PartnerSale(models.Model):
     zortout_order_id = fields.Many2one(
         "partner.zortout.order",
         string="Zortout Order",
+        ondelete="set null",
+    )
+    omisell_order_id = fields.Many2one(
+        "partner.omisell.order",
+        string="Omisell Order",
         ondelete="set null",
     )
     receipt_redeem_id = fields.Many2one(
@@ -558,3 +564,103 @@ class PartnerSale(models.Model):
         if order_date_string:
             return fields.Date.to_date(order_date_string)
         return False
+
+    @api.model
+    def sync_from_omisell_webhook(self, partner, payload, order_detail=None, omisell_order=None):
+        payload = payload or {}
+        payload_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        detail = order_detail if isinstance(order_detail, dict) else {}
+
+        omisell_order_number = (
+            detail.get("omisell_order_number")
+            or payload_data.get("omisell_order_number")
+            or ""
+        ).strip()
+        if not omisell_order_number:
+            return {"status": "ignored", "reason": "missing_omisell_order_number"}
+
+        sale = self.search([
+            ("partner_id", "=", partner.id),
+            ("source", "=", "omisell"),
+            ("external_id", "=", omisell_order_number),
+        ], limit=1)
+
+        now = fields.Datetime.now()
+
+        if partner.is_omisell_order_voided(payload, order_detail):
+            if sale:
+                sale.write({"status": "void", "last_sync_at": now})
+            return {
+                "status": "ok",
+                "sale_id": sale.id if sale else False,
+                "voided": bool(sale),
+            }
+
+        receiver = detail.get("receiver") if isinstance(detail.get("receiver"), dict) else {}
+        user = partner.find_user_from_omisell_order_detail(detail) if detail else self.env["crm.user"]
+        if omisell_order and omisell_order.user_id:
+            user = omisell_order.user_id
+
+        line_commands = self._build_omisell_line_commands(partner, detail)
+        vals = {
+            "partner_id": partner.id,
+            "source": "omisell",
+            "external_id": omisell_order_number,
+            "order_number": detail.get("order_number") or payload_data.get("order_number") or False,
+            "status": "paid",
+            "amount": partner.get_omisell_order_amount(detail),
+            "payment_status": partner.get_omisell_payment_status(detail) or False,
+            "customer_name": receiver.get("fullname") or False,
+            "customer_phone": receiver.get("phone") or False,
+            "customer_email": receiver.get("email") or False,
+            "user_id": user.id if user else False,
+            "omisell_order_id": omisell_order.id if omisell_order else False,
+            "order_date": self._parse_omisell_order_date(
+                detail.get("created_time") or payload_data.get("created_time")
+            ),
+            "last_sync_at": now,
+            "line_ids": [(5, 0, 0)] + line_commands,
+        }
+
+        if sale:
+            sale.write(vals)
+        else:
+            sale = self.create(vals)
+
+        return {"status": "ok", "sale_id": sale.id}
+
+    @api.model
+    def _build_omisell_line_commands(self, partner, detail):
+        parcels = detail.get("parcels") if isinstance(detail.get("parcels"), list) else []
+        commands = []
+        sequence = 0
+        for parcel in parcels:
+            items = parcel.get("inventory_items") if isinstance(parcel.get("inventory_items"), list) else []
+            price_field = "sale_price"
+            if not items:
+                items = parcel.get("catalogue_items") if isinstance(parcel.get("catalogue_items"), list) else []
+                price_field = "discounted_price"
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                sequence += 10
+                quantity = self._parse_optional_amount(partner, item.get("quantity"), default=1.0)
+                price_per_unit = self._parse_optional_amount(partner, item.get(price_field))
+                commands.append((0, 0, {
+                    "sequence": sequence,
+                    "sku": item.get("sku") or False,
+                    "name": item.get("name") or item.get("product_name") or "Unknown Product",
+                    "quantity": quantity,
+                    "price_per_unit": price_per_unit,
+                    "total_price": price_per_unit * quantity,
+                }))
+        return commands
+
+    @staticmethod
+    def _parse_omisell_order_date(created_time):
+        if created_time is None:
+            return False
+        try:
+            return fields.Date.to_date(datetime.utcfromtimestamp(float(created_time)))
+        except (TypeError, ValueError, OSError):
+            return False
