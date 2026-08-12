@@ -184,8 +184,46 @@ class PartnerOmisellIntegration(models.Model):
             vals["omisell_seller_id"] = (seller_id or "").strip()
         if country:
             vals["omisell_country"] = country.strip().upper()
+
+        if "omisell_api_key" in vals or "omisell_api_secret" in vals:
+            check_api_key = vals.get("omisell_api_key", self.omisell_api_key or "")
+            check_api_secret = vals.get("omisell_api_secret", self.omisell_api_secret or "")
+            if not check_api_key or not check_api_secret:
+                raise ValidationError("Missing Omisell configuration: API Key, API Secret")
+            self._verify_omisell_credentials(check_api_key, check_api_secret)
+
         self.write(vals)
         return self.serialize_omisell_status()
+
+    def _verify_omisell_credentials(self, api_key, api_secret):
+        self.ensure_one()
+        auth_url = self._get_omisell_auth_url()
+
+        try:
+            response = requests.post(
+                auth_url,
+                json={"api_key": api_key, "api_secret": api_secret},
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            raise ValidationError(f"Unable to connect to Omisell auth API: {error}") from error
+
+        try:
+            response_payload = response.json()
+        except ValueError as error:
+            raise ValidationError("Invalid response from Omisell auth API.") from error
+
+        if not isinstance(response_payload, dict):
+            raise ValidationError("Invalid response from Omisell auth API.")
+
+        if response.status_code >= 400 or response_payload.get("error"):
+            message = response_payload.get("messages")
+            raise ValidationError(message or "Omisell API Key/API Secret ไม่ถูกต้อง กรุณาตรวจสอบ")
+
+        data = response_payload.get("data")
+        if not isinstance(data, dict) or not data.get("token"):
+            raise ValidationError("Omisell auth response is missing token data.")
 
     def disable_omisell_for_api(self):
         self.ensure_one()
