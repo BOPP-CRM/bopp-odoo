@@ -551,6 +551,63 @@ class PartnerOmisellIntegration(models.Model):
             raise ValidationError("Invalid Omisell order detail response.")
         return data
 
+    def fetch_omisell_order_list(self, page=1, page_size=50, extra_params=None):
+        self.ensure_one()
+        base_url = (self.omisell_api_base_url or OMISELL_API_BASE_URL).rstrip("/")
+        url = f"{base_url}/api/v2/public/order/list"
+        params = {"page": page, "page_size": page_size}
+        if extra_params:
+            params.update({
+                key: value for key, value in extra_params.items() if value not in (None, "")
+            })
+
+        try:
+            response = requests.get(
+                url,
+                headers=self._get_omisell_request_headers(),
+                params=params,
+                timeout=30,
+            )
+            if response.status_code == 401:
+                response = requests.get(
+                    url,
+                    headers=self._get_omisell_request_headers(force_refresh=True),
+                    params=params,
+                    timeout=30,
+                )
+        except requests.RequestException as error:
+            raise ValidationError(f"Unable to connect to Omisell API: {error}") from error
+
+        try:
+            response_payload = response.json()
+        except ValueError as error:
+            raise ValidationError("Invalid response from Omisell API.") from error
+
+        if response.status_code >= 400:
+            message = response_payload.get("messages") if isinstance(response_payload, dict) else False
+            raise ValidationError(message or f"Omisell API returned HTTP {response.status_code}.")
+
+        if not isinstance(response_payload, dict):
+            raise ValidationError("Invalid response from Omisell API.")
+
+        if response_payload.get("error"):
+            raise ValidationError(response_payload.get("messages") or "Omisell API returned an error.")
+
+        data = response_payload.get("data")
+        if not isinstance(data, dict):
+            raise ValidationError("Invalid Omisell order list response.")
+        return data
+
+    def sync_omisell_orders_for_api(self, extra_params=None, page_size=50, max_pages=20):
+        self.ensure_one()
+        self._validate_omisell_configuration()
+        return self.env["partner.omisell.order"].sudo().sync_orders_from_omisell(
+            self,
+            extra_params=extra_params,
+            page_size=page_size,
+            max_pages=max_pages,
+        )
+
     def _get_spending_currency(self):
         self.ensure_one()
         return self.currency_ids.filtered("is_total_spending")[:1]
