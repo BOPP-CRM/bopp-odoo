@@ -173,6 +173,20 @@ class PartnerOmisellIntegration(models.Model):
         self.write({"omisell_enabled": True})
         return self.serialize_omisell_status()
 
+    def connect_omisell_for_api(self, api_key=None, api_secret=None, seller_id=None, country=None):
+        self.ensure_one()
+        vals = {"omisell_enabled": True}
+        if api_key is not None:
+            vals["omisell_api_key"] = (api_key or "").strip()
+        if api_secret is not None:
+            vals["omisell_api_secret"] = (api_secret or "").strip()
+        if seller_id is not None:
+            vals["omisell_seller_id"] = (seller_id or "").strip()
+        if country:
+            vals["omisell_country"] = country.strip().upper()
+        self.write(vals)
+        return self.serialize_omisell_status()
+
     def disable_omisell_for_api(self):
         self.ensure_one()
         self.write({"omisell_enabled": False})
