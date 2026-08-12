@@ -112,58 +112,6 @@ class PortalOmisellController(http.Controller):
         })
 
     @http.route(
-        "/api/portal/omisell/sync-orders",
-        type="http",
-        auth="public",
-        methods=["POST"],
-        csrf=False,
-        cors="*",
-    )
-    def sync_omisell_orders(self, **kwargs):
-        portal_user, auth_error = get_portal_admin_from_request()
-        if auth_error:
-            return auth_error
-
-        payload = self._parse_json_payload()
-        partner = portal_user.crm_partner_id.sudo()
-
-        extra_params = {}
-        for key in (
-            "external_created_from",
-            "external_created_to",
-            "updated_from",
-            "updated_to",
-            "status_group",
-            "status",
-            "shop_id",
-            "is_tax",
-            "is_active",
-        ):
-            if payload.get(key) is not None:
-                extra_params[key] = payload.get(key)
-
-        page_size = self._parse_int(payload.get("page_size")) or 50
-        max_pages = self._parse_int(payload.get("max_pages")) or 20
-
-        try:
-            result = partner.sync_omisell_orders_for_api(
-                extra_params=extra_params or None,
-                page_size=page_size,
-                max_pages=max_pages,
-            )
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "validation_error", "message": str(error)},
-                status=400,
-            )
-
-        return json_response({
-            "result": result,
-            "message": "Omisell orders synced.",
-        })
-
-    @http.route(
         "/api/portal/omisell/logs",
         type="http",
         auth="public",
