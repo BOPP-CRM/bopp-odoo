@@ -598,16 +598,6 @@ class PartnerOmisellIntegration(models.Model):
             raise ValidationError("Invalid Omisell order list response.")
         return data
 
-    def sync_omisell_orders_for_api(self, extra_params=None, page_size=50, max_pages=20):
-        self.ensure_one()
-        self._validate_omisell_configuration()
-        return self.env["partner.omisell.order"].sudo().sync_orders_from_omisell(
-            self,
-            extra_params=extra_params,
-            page_size=page_size,
-            max_pages=max_pages,
-        )
-
     def _get_spending_currency(self):
         self.ensure_one()
         return self.currency_ids.filtered("is_total_spending")[:1]
