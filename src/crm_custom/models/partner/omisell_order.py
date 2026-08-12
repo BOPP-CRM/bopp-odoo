@@ -83,6 +83,13 @@ class PartnerOmisellOrder(models.Model):
         else:
             order = self.create(vals)
 
+        self.env["partner.sale"].sudo().sync_from_omisell_webhook(
+            partner,
+            payload,
+            order_detail=None,
+            omisell_order=order,
+        )
+
         if order._should_revoke_points(partner, payload):
             return order._revoke_points()
 
@@ -100,6 +107,13 @@ class PartnerOmisellOrder(models.Model):
             }
 
         order.write(self._prepare_order_vals(partner, payload, order_detail=order_detail))
+
+        self.env["partner.sale"].sudo().sync_from_omisell_webhook(
+            partner,
+            payload,
+            order_detail=order_detail,
+            omisell_order=order,
+        )
 
         if order._should_revoke_points(partner, payload, order_detail):
             return order._revoke_points()
