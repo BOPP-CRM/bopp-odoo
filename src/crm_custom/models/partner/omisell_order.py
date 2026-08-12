@@ -138,6 +138,64 @@ class PartnerOmisellOrder(models.Model):
 
         return order._award_points(user, partner)
 
+    @api.model
+    def sync_orders_from_omisell(self, partner, extra_params=None, page_size=50, max_pages=20):
+        partner.ensure_one()
+        page = 1
+        synced = 0
+        failed = []
+
+        while True:
+            data = partner.fetch_omisell_order_list(
+                page=page,
+                page_size=page_size,
+                extra_params=extra_params,
+            )
+            results = data.get("results") if isinstance(data.get("results"), list) else []
+            if not results:
+                break
+
+            for item in results:
+                if not isinstance(item, dict):
+                    continue
+                omisell_order_number = (item.get("omisell_order_number") or "").strip()
+                if not omisell_order_number:
+                    continue
+
+                synthetic_payload = {
+                    "event": "manual_sync",
+                    "data": {
+                        "order_number": item.get("order_number"),
+                        "omisell_order_number": omisell_order_number,
+                        "status_id": item.get("status_id"),
+                        "status_name": item.get("status_name"),
+                        "created_time": item.get("created_time"),
+                        "updated_time": item.get("updated_time"),
+                    },
+                }
+                try:
+                    self.process_webhook(partner, synthetic_payload)
+                    synced += 1
+                except Exception as error:
+                    failed.append({
+                        "omisell_order_number": omisell_order_number,
+                        "message": str(error),
+                    })
+
+            count = data.get("count") or 0
+            if page * page_size >= count:
+                break
+            page += 1
+            if max_pages and page > max_pages:
+                break
+
+        return {
+            "status": "ok",
+            "synced": synced,
+            "failed": failed,
+            "pages_fetched": page,
+        }
+
     def _prepare_order_vals(self, partner, payload, order_detail=None):
         payload = payload or {}
         payload_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
