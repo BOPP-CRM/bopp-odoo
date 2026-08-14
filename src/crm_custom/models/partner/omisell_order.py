@@ -91,7 +91,9 @@ class PartnerOmisellOrder(models.Model):
         )
 
         if order._should_revoke_points(partner, payload):
-            return order._revoke_points()
+            result = order._revoke_points()
+            self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
+            return result
 
         try:
             order_detail = partner.fetch_omisell_order_detail(omisell_order_number)
@@ -116,7 +118,9 @@ class PartnerOmisellOrder(models.Model):
         )
 
         if order._should_revoke_points(partner, payload, order_detail):
-            return order._revoke_points()
+            result = order._revoke_points()
+            self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
+            return result
 
         if order.points_awarded:
             return {"status": "ok", "order_id": order.id, "points_awarded": False}
@@ -136,7 +140,85 @@ class PartnerOmisellOrder(models.Model):
                 "warning": "member_not_found",
             }
 
-        return order._award_points(user, partner)
+        result = order._award_points(user, partner)
+        self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
+        return result
+
+    def refresh_and_award(self, target_user=None):
+        self.ensure_one()
+        partner = self.partner_id
+
+        try:
+            order_detail = partner.fetch_omisell_order_detail(self.omisell_order_number)
+        except Exception as error:
+            self.write({"error_message": str(error)})
+            return {"status": "error", "order_id": self.id, "message": str(error)}
+
+        synthetic_payload = {
+            "event": self.webhook_event or "manual_claim_check",
+            "request_id": self.webhook_request_id or False,
+            "data": {},
+        }
+        self.write(self._prepare_order_vals(partner, synthetic_payload, order_detail=order_detail))
+
+        self.env["partner.sale"].sudo().sync_from_omisell_webhook(
+            partner,
+            synthetic_payload,
+            order_detail=order_detail,
+            omisell_order=self,
+        )
+
+        if self._should_revoke_points(partner, synthetic_payload, order_detail):
+            return self._revoke_points()
+
+        if self.points_awarded:
+            if target_user and (not self.user_id or self.user_id.id != target_user.id):
+                return {
+                    "status": "ok",
+                    "order_id": self.id,
+                    "points_awarded": False,
+                    "reason": "member_mismatch",
+                }
+            return {
+                "status": "ok",
+                "order_id": self.id,
+                "points_awarded": False,
+                "already_awarded": True,
+                "user_id": self.user_id.id if self.user_id else False,
+            }
+
+        if not partner.is_omisell_order_eligible_for_points(synthetic_payload, order_detail):
+            return {
+                "status": "ok",
+                "order_id": self.id,
+                "points_awarded": False,
+                "reason": "not_completed",
+            }
+
+        matched_user = partner.find_user_from_omisell_order_detail(order_detail)
+        if target_user:
+            if not matched_user or matched_user.id != target_user.id:
+                return {
+                    "status": "ok",
+                    "order_id": self.id,
+                    "points_awarded": False,
+                    "reason": "member_mismatch",
+                }
+            user = target_user
+        else:
+            user = matched_user
+            if not user:
+                self.write({
+                    "error_message": "ไม่พบสมาชิกจากเบอร์โทรหรืออีเมลของออเดอร์",
+                })
+                return {
+                    "status": "ok",
+                    "order_id": self.id,
+                    "points_awarded": False,
+                    "reason": "member_not_found",
+                }
+
+        return self._award_points(user, partner)
 
     def _prepare_order_vals(self, partner, payload, order_detail=None):
         payload = payload or {}
