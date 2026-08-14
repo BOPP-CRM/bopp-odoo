@@ -200,11 +200,9 @@ class PartnerOmisellOrderClaim(models.Model):
         if not order:
             order = self._find_matching_order()
             if not order:
-                self.write({
-                    "error_message": "ไม่พบคำสั่งซื้อนี้ในระบบ Omisell กรุณาลองใหม่ภายหลังหรือแจ้งเจ้าหน้าที่",
-                    "last_checked_at": fields.Datetime.now(),
-                })
-                return
+                raise ValidationError(
+                    "ไม่พบคำสั่งซื้อนี้ในระบบ กรุณาตรวจสอบช่องทางและหมายเลขคำสั่งซื้ออีกครั้ง"
+                )
             self.write({
                 "omisell_order_id": order.id,
                 "omisell_order_number": order.omisell_order_number,
