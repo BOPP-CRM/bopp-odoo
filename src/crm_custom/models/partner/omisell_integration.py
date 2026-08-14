@@ -227,7 +227,11 @@ class PartnerOmisellIntegration(models.Model):
 
     def disable_omisell_for_api(self):
         self.ensure_one()
-        self.write({"omisell_enabled": False})
+        self.write({
+            "omisell_enabled": False,
+            "omisell_webhook_token": False,
+            "omisell_webhook_secret": False,
+        })
         return self.serialize_omisell_status()
 
     def regenerate_omisell_secret_for_api(self):
