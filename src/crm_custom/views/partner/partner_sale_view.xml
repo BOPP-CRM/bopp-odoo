@@ -52,6 +52,7 @@
                     </group>
                     <group string="Links">
                         <field name="zortout_order_id" readonly="1"/>
+                        <field name="omisell_order_id" readonly="1"/>
                         <field name="receipt_redeem_id" readonly="1"/>
                     </group>
                     <notebook>

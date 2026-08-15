@@ -221,6 +221,130 @@ class PortalSalesController(http.Controller):
         })
 
     @http.route(
+        "/api/portal/sales/sync-omisell/status",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_omisell_sale_sync_status(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.omisell.sale.sync.job"].sudo()
+        missing_count = job_model.count_missing_sales_for_partner(partner)
+        omisell_configured = bool(
+            partner.omisell_enabled
+            and partner.omisell_api_key
+            and partner.omisell_api_secret
+            and partner.omisell_seller_id
+        )
+
+        return json_response({
+            "missing_count": missing_count,
+            "omisell_configured": omisell_configured,
+            "active_job": job_model.get_active_job_for_partner(partner),
+        })
+
+    @http.route(
+        "/api/portal/sales/sync-omisell",
+        type="http",
+        auth="public",
+        methods=["POST"],
+        csrf=False,
+        cors="*",
+    )
+    def start_omisell_sale_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        payload, parse_error = self._parse_json_payload()
+        if parse_error:
+            return parse_error
+
+        extra_params = {}
+        for key in (
+            "external_created_from",
+            "external_created_to",
+            "updated_from",
+            "updated_to",
+            "status_group",
+            "status",
+            "shop_id",
+            "is_tax",
+            "is_active",
+        ):
+            if payload.get(key) is not None:
+                extra_params[key] = payload.get(key)
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.omisell.sale.sync.job"].sudo()
+        try:
+            job = job_model.start_sync_for_partner(partner, extra_params=extra_params or None)
+        except ValidationError as error:
+            request.env.cr.rollback()
+            return json_response(
+                {"error": "validation_error", "message": str(error)},
+                status=400,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+            "message": "เริ่ม sync รายการขายจาก Omisell แล้ว",
+        }, status=201)
+
+    @http.route(
+        "/api/portal/sales/sync-omisell/active",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_active_omisell_sale_sync(self, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job_model = request.env["partner.omisell.sale.sync.job"].sudo()
+        return json_response({
+            "job": job_model.get_active_job_for_partner(partner),
+        })
+
+    @http.route(
+        "/api/portal/sales/sync-omisell/<int:job_id>",
+        type="http",
+        auth="public",
+        methods=["GET"],
+        csrf=False,
+        cors="*",
+    )
+    def get_omisell_sale_sync_job(self, job_id, **kwargs):
+        portal_user, auth_error = get_portal_admin_from_request()
+        if auth_error:
+            return auth_error
+
+        partner = portal_user.crm_partner_id.sudo()
+        job = request.env["partner.omisell.sale.sync.job"].sudo().search([
+            ("id", "=", job_id),
+            ("partner_id", "=", partner.id),
+        ], limit=1)
+        if not job:
+            return json_response(
+                {"error": "job_not_found", "message": "ไม่พบงาน sync ดังกล่าว"},
+                status=404,
+            )
+
+        return json_response({
+            "job": job.serialize_for_portal(),
+        })
+
+    @http.route(
         "/api/portal/sales/sync-receipts/status",
         type="http",
         auth="public",

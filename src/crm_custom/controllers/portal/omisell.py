@@ -1,3 +1,5 @@
+import json
+
 from odoo import http
 from odoo.exceptions import ValidationError
 from odoo.http import request
@@ -41,9 +43,15 @@ class PortalOmisellController(http.Controller):
         if auth_error:
             return auth_error
 
+        payload = self._parse_json_payload()
         partner = portal_user.crm_partner_id.sudo()
         try:
-            status = partner.enable_omisell_for_api()
+            status = partner.connect_omisell_for_api(
+                payload.get("api_key"),
+                payload.get("api_secret"),
+                payload.get("seller_id"),
+                payload.get("country"),
+            )
         except ValidationError as error:
             request.env.cr.rollback()
             return json_response(
@@ -129,6 +137,13 @@ class PortalOmisellController(http.Controller):
             "limit": limit,
             "offset": offset,
         })
+
+    def _parse_json_payload(self):
+        try:
+            payload = json.loads(request.httprequest.get_data(as_text=True) or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        return payload if isinstance(payload, dict) else {}
 
     def _parse_int(self, value):
         try:

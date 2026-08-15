@@ -173,9 +173,65 @@ class PartnerOmisellIntegration(models.Model):
         self.write({"omisell_enabled": True})
         return self.serialize_omisell_status()
 
+    def connect_omisell_for_api(self, api_key=None, api_secret=None, seller_id=None, country=None):
+        self.ensure_one()
+        vals = {"omisell_enabled": True}
+        if api_key is not None:
+            vals["omisell_api_key"] = (api_key or "").strip()
+        if api_secret is not None:
+            vals["omisell_api_secret"] = (api_secret or "").strip()
+        if seller_id is not None:
+            vals["omisell_seller_id"] = (seller_id or "").strip()
+        if country:
+            vals["omisell_country"] = country.strip().upper()
+
+        if "omisell_api_key" in vals or "omisell_api_secret" in vals:
+            check_api_key = vals.get("omisell_api_key", self.omisell_api_key or "")
+            check_api_secret = vals.get("omisell_api_secret", self.omisell_api_secret or "")
+            if not check_api_key or not check_api_secret:
+                raise ValidationError("Missing Omisell configuration: API Key, API Secret")
+            self._verify_omisell_credentials(check_api_key, check_api_secret)
+
+        self.write(vals)
+        return self.serialize_omisell_status()
+
+    def _verify_omisell_credentials(self, api_key, api_secret):
+        self.ensure_one()
+        auth_url = self._get_omisell_auth_url()
+
+        try:
+            response = requests.post(
+                auth_url,
+                json={"api_key": api_key, "api_secret": api_secret},
+                headers={"Content-Type": "application/json"},
+                timeout=30,
+            )
+        except requests.RequestException as error:
+            raise ValidationError(f"Unable to connect to Omisell auth API: {error}") from error
+
+        try:
+            response_payload = response.json()
+        except ValueError as error:
+            raise ValidationError("Invalid response from Omisell auth API.") from error
+
+        if not isinstance(response_payload, dict):
+            raise ValidationError("Invalid response from Omisell auth API.")
+
+        if response.status_code >= 400 or response_payload.get("error"):
+            message = response_payload.get("messages")
+            raise ValidationError(message or "Omisell API Key/API Secret ไม่ถูกต้อง กรุณาตรวจสอบ")
+
+        data = response_payload.get("data")
+        if not isinstance(data, dict) or not data.get("token"):
+            raise ValidationError("Omisell auth response is missing token data.")
+
     def disable_omisell_for_api(self):
         self.ensure_one()
-        self.write({"omisell_enabled": False})
+        self.write({
+            "omisell_enabled": False,
+            "omisell_webhook_token": False,
+            "omisell_webhook_secret": False,
+        })
         return self.serialize_omisell_status()
 
     def regenerate_omisell_secret_for_api(self):
@@ -497,6 +553,53 @@ class PartnerOmisellIntegration(models.Model):
         data = response_payload.get("data")
         if not isinstance(data, dict):
             raise ValidationError("Invalid Omisell order detail response.")
+        return data
+
+    def fetch_omisell_order_list(self, page=1, page_size=50, extra_params=None):
+        self.ensure_one()
+        base_url = (self.omisell_api_base_url or OMISELL_API_BASE_URL).rstrip("/")
+        url = f"{base_url}/api/v2/public/order/list"
+        params = {"page": page, "page_size": page_size}
+        if extra_params:
+            params.update({
+                key: value for key, value in extra_params.items() if value not in (None, "")
+            })
+
+        try:
+            response = requests.get(
+                url,
+                headers=self._get_omisell_request_headers(),
+                params=params,
+                timeout=30,
+            )
+            if response.status_code == 401:
+                response = requests.get(
+                    url,
+                    headers=self._get_omisell_request_headers(force_refresh=True),
+                    params=params,
+                    timeout=30,
+                )
+        except requests.RequestException as error:
+            raise ValidationError(f"Unable to connect to Omisell API: {error}") from error
+
+        try:
+            response_payload = response.json()
+        except ValueError as error:
+            raise ValidationError("Invalid response from Omisell API.") from error
+
+        if response.status_code >= 400:
+            message = response_payload.get("messages") if isinstance(response_payload, dict) else False
+            raise ValidationError(message or f"Omisell API returned HTTP {response.status_code}.")
+
+        if not isinstance(response_payload, dict):
+            raise ValidationError("Invalid response from Omisell API.")
+
+        if response_payload.get("error"):
+            raise ValidationError(response_payload.get("messages") or "Omisell API returned an error.")
+
+        data = response_payload.get("data")
+        if not isinstance(data, dict):
+            raise ValidationError("Invalid Omisell order list response.")
         return data
 
     def _get_spending_currency(self):
