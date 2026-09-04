@@ -172,7 +172,6 @@ class PartnerOmisellOrder(models.Model):
             return self._revoke_points()
 
         if self.points_awarded:
-            # If points already awarded, report already_awarded regardless of target_user.
             return {
                 "status": "ok",
                 "order_id": self.id,
