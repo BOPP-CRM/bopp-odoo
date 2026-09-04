@@ -208,7 +208,9 @@ class PartnerOmisellOrderClaim(models.Model):
                 "omisell_order_number": order.omisell_order_number,
             })
 
-        result = order.refresh_and_award(target_user=self.user_id)
+        # Do not enforce matching receiver -> user. Call without target_user
+        # so we only check order existence/status and avoid member_mismatch.
+        result = order.refresh_and_award()
         self.write({
             "order_status_id": order.order_status_id,
             "order_status_name": order.order_status_name,
