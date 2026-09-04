@@ -313,10 +313,8 @@ class PartnerOmisellIntegration(models.Model):
             return f"0{digits[2:]}"
         if digits.startswith("0"):
             return digits
-        # If Omisell provided a 9-digit local number (e.g. 812345678), add leading 0
         if len(digits) == 9:
             return f"0{digits}"
-        # Fallback: return cleaned digit string so searches match stored numeric phones
         return digits
 
     def find_user_from_omisell_order_detail(self, order_detail):
