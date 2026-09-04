@@ -208,6 +208,9 @@ class PartnerOmisellOrderClaim(models.Model):
                 "omisell_order_number": order.omisell_order_number,
             })
 
+      
+        # When checking claims, prefer awarding to the claimant (`user_id`) and
+        # do not reject based on matched receiver data.
         result = order.refresh_and_award(target_user=self.user_id)
         self.write({
             "order_status_id": order.order_status_id,
