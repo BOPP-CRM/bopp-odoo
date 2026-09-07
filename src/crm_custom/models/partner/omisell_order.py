@@ -1,5 +1,12 @@
 from odoo import api, fields, models
 
+from .omisell_integration import (
+    OMISELL_RETURN_CANCELLED_STATUS_IDS,
+    OMISELL_RETURN_CANCELLED_STATUS_NAMES,
+    OMISELL_RETURN_COMPLETED_STATUS_IDS,
+    OMISELL_RETURN_COMPLETED_STATUS_NAMES,
+)
+
 
 class PartnerOmisellOrder(models.Model):
     _name = "partner.omisell.order"
@@ -34,6 +41,14 @@ class PartnerOmisellOrder(models.Model):
     points_awarded = fields.Boolean(string="Points Awarded", default=False, tracking=True)
     points_awarded_at = fields.Datetime(string="Points Awarded At", readonly=True)
     error_message = fields.Text(string="Error Message", tracking=True)
+
+    omisell_return_order_number = fields.Char(
+        string="Omisell Return Order Number", index=True, tracking=True
+    )
+    return_order_status_id = fields.Integer(string="Return Order Status ID", tracking=True)
+    return_order_status_name = fields.Char(string="Return Order Status", tracking=True)
+    return_webhook_event = fields.Char(string="Last Return Webhook Event", tracking=True)
+    return_last_webhook_at = fields.Datetime(string="Return Last Webhook At", tracking=True)
 
     partner_id = fields.Many2one(
         "partner",
@@ -122,6 +137,18 @@ class PartnerOmisellOrder(models.Model):
             self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
             return result
 
+        if order._return_blocks_points():
+            if order.points_awarded:
+                result = order._revoke_points()
+                self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
+                return result
+            return {
+                "status": "ok",
+                "order_id": order.id,
+                "points_awarded": False,
+                "reason": "return_blocked",
+            }
+
         if order.points_awarded:
             return {"status": "ok", "order_id": order.id, "points_awarded": False}
 
@@ -143,6 +170,68 @@ class PartnerOmisellOrder(models.Model):
         result = order._award_points(user, partner)
         self.env["partner.omisell.order.claim"].sudo()._resolve_pending_claims_for_order(order)
         return result
+
+    @api.model
+    def process_return_webhook(self, partner, payload):
+        payload = payload or {}
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+
+        return_number = (
+            data.get("omisell_return_order_number")
+            or data.get("return_order_number")
+            or ""
+        ).strip()
+        if not return_number:
+            return {"status": "ignored", "reason": "missing_return_order_number"}
+
+        omisell_order_number = (data.get("omisell_order_number") or "").strip()
+        order_number = (data.get("order_number") or "").strip()
+
+        order = self.browse()
+        if omisell_order_number:
+            order = self.search([
+                ("partner_id", "=", partner.id),
+                ("omisell_order_number", "=", omisell_order_number),
+            ], limit=1)
+        if not order and order_number:
+            order = self.search([
+                ("partner_id", "=", partner.id),
+                ("order_number", "=ilike", order_number),
+            ], limit=1)
+        if not order:
+            return {
+                "status": "ignored",
+                "reason": "order_not_found",
+                "return_order_number": return_number,
+            }
+
+        order.write({
+            "omisell_return_order_number": return_number,
+            "return_order_status_id": partner._parse_omisell_status_id(data.get("status_id")) or False,
+            "return_order_status_name": data.get("status_name") or False,
+            "return_webhook_event": payload.get("event") or False,
+            "return_last_webhook_at": fields.Datetime.now(),
+        })
+
+        claim_model = self.env["partner.omisell.order.claim"].sudo()
+
+        if order._is_return_completed():
+            if order.points_awarded:
+                result = order._revoke_points()
+            else:
+                result = {"status": "ok", "order_id": order.id, "return_completed": True}
+            claim_model._resolve_pending_claims_for_order(order)
+            return result
+
+        # Return cancelled -> purchase stands; still in progress -> claims blocked.
+        # Either way, re-evaluate any pending claims against the new return state.
+        claim_model._resolve_pending_claims_for_order(order)
+        return {
+            "status": "ok",
+            "order_id": order.id,
+            "return_cancelled": order._is_return_cancelled(),
+            "return_in_progress": not order._is_return_cancelled(),
+        }
 
     def refresh_and_award(self, target_user=None):
         self.ensure_one()
@@ -186,6 +275,16 @@ class PartnerOmisellOrder(models.Model):
                 "order_id": self.id,
                 "points_awarded": False,
                 "reason": "not_completed",
+            }
+
+        if self._return_blocks_points():
+            if self.points_awarded:
+                return self._revoke_points()
+            return {
+                "status": "ok",
+                "order_id": self.id,
+                "points_awarded": False,
+                "reason": "return_blocked",
             }
 
         matched_user = partner.find_user_from_omisell_order_detail(order_detail)
@@ -252,6 +351,32 @@ class PartnerOmisellOrder(models.Model):
     def _should_revoke_points(self, partner, payload, order_detail=None):
         self.ensure_one()
         return partner.is_omisell_order_voided(payload, order_detail)
+
+    def _is_return_completed(self):
+        self.ensure_one()
+        name = (self.return_order_status_name or "").strip().lower()
+        event = (self.return_webhook_event or "").strip().lower()
+        return (
+            self.return_order_status_id in OMISELL_RETURN_COMPLETED_STATUS_IDS
+            or name in OMISELL_RETURN_COMPLETED_STATUS_NAMES
+            or event.endswith("refund_paid")
+        )
+
+    def _is_return_cancelled(self):
+        self.ensure_one()
+        name = (self.return_order_status_name or "").strip().lower()
+        return (
+            self.return_order_status_id in OMISELL_RETURN_CANCELLED_STATUS_IDS
+            or name in OMISELL_RETURN_CANCELLED_STATUS_NAMES
+        )
+
+    def _return_blocks_points(self):
+        self.ensure_one()
+        if not self.omisell_return_order_number:
+            return False
+        # A cancelled/rejected return means the purchase stands. Anything else
+        # (return completed, or still in progress) blocks the points.
+        return not self._is_return_cancelled()
 
     def _revoke_points(self):
         self.ensure_one()

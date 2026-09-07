@@ -242,6 +242,16 @@ class PartnerOmisellOrderClaim(models.Model):
                 raise ValidationError("ข้อมูลผู้รับสินค้าของคำสั่งซื้อนี้ไม่ตรงกับสมาชิกที่ขอคะแนน")
             return
 
+        if reason == "return_blocked":
+            self.write({
+                "state": "rejected",
+                "reviewed_date": fields.Datetime.now(),
+                "reject_reason": "คำสั่งซื้อนี้มีการคืนสินค้า",
+            })
+            if raise_on_pending:
+                raise ValidationError("คำสั่งซื้อนี้มีการคืนสินค้า")
+            return
+
         if reason == "not_completed":
             msg = "คำสั่งซื้อยังไม่เสร็จสมบูรณ์ กรุณาลองเช็คใหม่อีกครั้งภายหลัง"
             self.write({"error_message": msg})

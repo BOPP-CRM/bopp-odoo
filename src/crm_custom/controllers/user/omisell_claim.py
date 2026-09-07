@@ -196,6 +196,8 @@ class OmisellClaimController(http.Controller):
             "omisell_order_number": claim.omisell_order_number or False,
             "order_status_id": claim.order_status_id or False,
             "order_status_name": claim.order_status_name or False,
+            "return_order_number": order.omisell_return_order_number or False if order else False,
+            "return_order_status_name": order.return_order_status_name or False if order else False,
             "amount": order.amount if order else 0,
             "state": claim.state,
             "reject_reason": claim.reject_reason or False,
