@@ -172,13 +172,6 @@ class PartnerOmisellOrder(models.Model):
             return self._revoke_points()
 
         if self.points_awarded:
-            if target_user and (not self.user_id or self.user_id.id != target_user.id):
-                return {
-                    "status": "ok",
-                    "order_id": self.id,
-                    "points_awarded": False,
-                    "reason": "member_mismatch",
-                }
             return {
                 "status": "ok",
                 "order_id": self.id,
@@ -197,13 +190,6 @@ class PartnerOmisellOrder(models.Model):
 
         matched_user = partner.find_user_from_omisell_order_detail(order_detail)
         if target_user:
-            if not matched_user or matched_user.id != target_user.id:
-                return {
-                    "status": "ok",
-                    "order_id": self.id,
-                    "points_awarded": False,
-                    "reason": "member_mismatch",
-                }
             user = target_user
         else:
             user = matched_user

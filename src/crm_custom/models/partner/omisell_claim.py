@@ -142,14 +142,14 @@ class PartnerOmisellOrderClaim(models.Model):
             "submitted_date": fields.Datetime.now(),
             "state": "pending",
         })
-        claim._check_and_award()
+        claim._check_and_award(raise_on_pending=True)
         return claim
 
     def recheck(self):
         self.ensure_one()
         if self.state != "pending":
             raise ValidationError("ตรวจสอบซ้ำได้เฉพาะรายการที่รอดำเนินการ")
-        self._check_and_award()
+        self._check_and_award(raise_on_pending=True)
         return self
 
     def action_reject(self):
@@ -191,7 +191,7 @@ class PartnerOmisellOrderClaim(models.Model):
             "error_message": False,
         })
 
-    def _check_and_award(self):
+    def _check_and_award(self, raise_on_pending=False):
         self.ensure_one()
         if self.state != "pending":
             return
@@ -214,11 +214,11 @@ class PartnerOmisellOrderClaim(models.Model):
             "order_status_name": order.order_status_name,
             "last_checked_at": fields.Datetime.now(),
         })
-
         if result.get("status") == "error":
-            self.write({
-                "error_message": result.get("message") or "ไม่สามารถตรวจสอบสถานะคำสั่งซื้อได้",
-            })
+            msg = result.get("message") or "ไม่สามารถตรวจสอบสถานะคำสั่งซื้อได้"
+            self.write({"error_message": msg})
+            if raise_on_pending:
+                raise ValidationError(msg)
             return
 
         if result.get("points_revoked") is not None:
@@ -227,6 +227,8 @@ class PartnerOmisellOrderClaim(models.Model):
                 "reviewed_date": fields.Datetime.now(),
                 "reject_reason": "คำสั่งซื้อนี้ถูกยกเลิกหรือคืนสินค้า",
             })
+            if raise_on_pending:
+                raise ValidationError("คำสั่งซื้อนี้ถูกยกเลิกหรือคืนสินค้า")
             return
 
         reason = result.get("reason")
@@ -236,27 +238,32 @@ class PartnerOmisellOrderClaim(models.Model):
                 "reviewed_date": fields.Datetime.now(),
                 "reject_reason": "ข้อมูลผู้รับสินค้าของคำสั่งซื้อนี้ไม่ตรงกับสมาชิกที่ขอคะแนน",
             })
+            if raise_on_pending:
+                raise ValidationError("ข้อมูลผู้รับสินค้าของคำสั่งซื้อนี้ไม่ตรงกับสมาชิกที่ขอคะแนน")
             return
 
         if reason == "not_completed":
-            self.write({
-                "error_message": "คำสั่งซื้อยังไม่เสร็จสมบูรณ์ กรุณาลองเช็คใหม่อีกครั้งภายหลัง",
-            })
+            msg = "คำสั่งซื้อยังไม่เสร็จสมบูรณ์ กรุณาลองเช็คใหม่อีกครั้งภายหลัง"
+            self.write({"error_message": msg})
+            if raise_on_pending:
+                raise ValidationError(msg)
             return
 
         if reason == "member_not_found":
-            self.write({
-                "error_message": "ไม่พบข้อมูลสมาชิกจากคำสั่งซื้อนี้ กรุณาติดต่อเจ้าหน้าที่",
-            })
+            msg = "ไม่พบข้อมูลสมาชิกจากคำสั่งซื้อนี้ กรุณาติดต่อเจ้าหน้าที่"
+            self.write({"error_message": msg})
+            if raise_on_pending:
+                raise ValidationError(msg)
             return
 
         if result.get("points_awarded") or result.get("already_awarded"):
             self._mark_approved(order)
             return
 
-        self.write({
-            "error_message": "ไม่สามารถให้คะแนนได้ กรุณาติดต่อเจ้าหน้าที่",
-        })
+        msg = "ไม่สามารถให้คะแนนได้ กรุณาติดต่อเจ้าหน้าที่"
+        self.write({"error_message": msg})
+        if raise_on_pending:
+            raise ValidationError(msg)
 
     @api.model
     def _resolve_pending_claims_for_order(self, order):

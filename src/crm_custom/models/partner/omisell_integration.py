@@ -313,7 +313,9 @@ class PartnerOmisellIntegration(models.Model):
             return f"0{digits[2:]}"
         if digits.startswith("0"):
             return digits
-        return phone
+        if len(digits) == 9:
+            return f"0{digits}"
+        return digits
 
     def find_user_from_omisell_order_detail(self, order_detail):
         self.ensure_one()
