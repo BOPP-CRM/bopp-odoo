@@ -12,6 +12,8 @@
                 <field name="amount"/>
                 <field name="payment_status"/>
                 <field name="order_status_name"/>
+                <field name="omisell_return_order_number" optional="show"/>
+                <field name="return_order_status_name" optional="show"/>
                 <field name="points_awarded"/>
                 <field name="reward_points"/>
                 <field name="last_webhook_at"/>
@@ -53,6 +55,13 @@
                         <field name="customer_phone" readonly="1"/>
                         <field name="customer_email" readonly="1"/>
                         <field name="user_id" readonly="1"/>
+                    </group>
+                    <group string="Return Order" invisible="not omisell_return_order_number">
+                        <field name="omisell_return_order_number" readonly="1"/>
+                        <field name="return_order_status_id" readonly="1"/>
+                        <field name="return_order_status_name" readonly="1"/>
+                        <field name="return_webhook_event" readonly="1"/>
+                        <field name="return_last_webhook_at" readonly="1"/>
                     </group>
                     <group string="Points">
                         <field name="tier_convert_points" readonly="1"/>
