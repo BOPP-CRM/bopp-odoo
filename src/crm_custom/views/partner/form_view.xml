@@ -300,6 +300,8 @@
                                     <field name="amount"/>
                                     <field name="payment_status"/>
                                     <field name="order_status_name"/>
+                                    <field name="omisell_return_order_number"/>
+                                    <field name="return_order_status_name"/>
                                     <field name="points_awarded"/>
                                     <field name="reward_points"/>
                                     <field name="last_webhook_at"/>

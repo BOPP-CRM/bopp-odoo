@@ -23,6 +23,25 @@ OMISELL_VOID_STATUS_NAMES = {
     "courier lost items",
 }
 
+# Return-order (a separate Omisell document with its own lifecycle). The parent
+# order stays at status 900 even after a return, so the return state is tracked
+# separately on the order record. Return status uses the shared Omisell status
+# enum (data.status_id / data.status_name).
+#   800 Returned                    -> goods came back -> no points (revoke if given)
+#   700-708 Cancelled by ...        -> return failed   -> purchase stands, points OK
+#   anything else (370 Cancellation Requested, 650 Returning, ...) -> in progress -> block
+OMISELL_RETURN_COMPLETED_STATUS_IDS = {800}
+OMISELL_RETURN_COMPLETED_STATUS_NAMES = {"returned"}
+OMISELL_RETURN_CANCELLED_STATUS_IDS = {700, 701, 702, 703, 704, 708}
+OMISELL_RETURN_CANCELLED_STATUS_NAMES = {
+    "cancelled by seller",
+    "cancelled by operator",
+    "cancelled by partner",
+    "cancelled by system",
+    "cancelled by warehouse",
+    "cancelled by lost items 3pf",
+}
+
 
 class PartnerOmisellIntegration(models.Model):
     _inherit = "partner"
@@ -635,4 +654,17 @@ class PartnerOmisellIntegration(models.Model):
     def process_omisell_webhook(self, payload):
         self.ensure_one()
         order_model = self.env["partner.omisell.order"].sudo()
+        if self._is_omisell_return_webhook(payload):
+            return order_model.process_return_webhook(self, payload)
         return order_model.process_webhook(self, payload)
+
+    @api.model
+    def _is_omisell_return_webhook(self, payload):
+        payload = payload or {}
+        event = (payload.get("event") or "").strip().lower()
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        if event.startswith("order_return") or "return" in event:
+            return True
+        return bool(
+            data.get("omisell_return_order_number") or data.get("return_order_number")
+        )
