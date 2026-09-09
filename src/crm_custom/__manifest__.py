@@ -1,6 +1,10 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.49",
+<<<<<<< Updated upstream
+    "version": "1.0.52",
+=======
+    "version": "1.0.50",
+>>>>>>> Stashed changes
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
