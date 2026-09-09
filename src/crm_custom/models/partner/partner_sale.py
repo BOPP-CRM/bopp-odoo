@@ -648,7 +648,12 @@ class PartnerSale(models.Model):
                 price_per_unit = self._parse_optional_amount(partner, item.get(price_field))
                 commands.append((0, 0, {
                     "sequence": sequence,
-                    "sku": item.get("sku") or False,
+                    "sku": (
+                        item.get("catalogue_sku")
+                        or item.get("inventory_sku")
+                        or item.get("sku")
+                        or False
+                    ),
                     "name": item.get("name") or item.get("product_name") or "Unknown Product",
                     "quantity": quantity,
                     "price_per_unit": price_per_unit,
