@@ -43,6 +43,6 @@ print("bearer token :", token.token)
 print("expires at   :", token.expires_at)
 print("\ncurl example:")
 print(
-    f'  curl -s http://localhost:8069/portal/appearance '
+    f'  curl -s http://localhost:8069/api/portal/appearance '
     f'-H "Authorization: Bearer {token.token}"'
 )

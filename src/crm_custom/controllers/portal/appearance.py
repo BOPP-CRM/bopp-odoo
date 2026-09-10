@@ -46,7 +46,7 @@ IMAGE_FIELDS = {
 
 class PortalAppearanceController(http.Controller):
     @http.route(
-        "/portal/appearance",
+        "/api/portal/appearance",
         type="http",
         auth="public",
         methods=["GET"],
@@ -61,7 +61,7 @@ class PortalAppearanceController(http.Controller):
         return json_response(self._serialize_appearance(user.crm_partner_id))
 
     @http.route(
-        "/portal/appearance",
+        "/api/portal/appearance",
         type="http",
         auth="public",
         methods=["PATCH"],
@@ -95,7 +95,7 @@ class PortalAppearanceController(http.Controller):
         return json_response(self._serialize_appearance(partner))
 
     @http.route(
-        "/portal/appearance/image",
+        "/api/portal/appearance/image",
         type="http",
         auth="public",
         methods=["POST"],
@@ -191,7 +191,7 @@ class PortalAppearanceController(http.Controller):
                         {
                             "error": "invalid_request",
                             "message": f"{api_key} must be an http(s) URL. "
-                            "Use POST /portal/appearance/image to upload a file.",
+                            "Use POST /api/portal/appearance/image to upload a file.",
                         },
                         status=400,
                     )
