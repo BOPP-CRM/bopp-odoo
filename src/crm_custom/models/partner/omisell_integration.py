@@ -649,7 +649,7 @@ class PartnerOmisellIntegration(models.Model):
                 user.tier_id = tier
         if not tier or tier.convert_points <= 0:
             return 0
-        return tier.get_effective_convert_points()
+        return tier.get_effective_convert_points(channel="omisell")
 
     def process_omisell_webhook(self, payload):
         self.ensure_one()

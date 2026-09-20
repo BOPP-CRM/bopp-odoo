@@ -15,6 +15,12 @@ DAY_POINT_MULTIPLIER_FIELDS = (
     "point_multiplier_sun",
 )
 
+POINT_MULTIPLIER_CHANNELS = {
+    "receipt": "point_multiplier_apply_receipt",
+    "zortout": "point_multiplier_apply_zortout",
+    "omisell": "point_multiplier_apply_omisell",
+}
+
 
 class PartnerTier(models.Model):
     _name = "partner.tier"
@@ -78,6 +84,18 @@ class PartnerTier(models.Model):
         required=True,
         default=1.0,
     )
+    point_multiplier_apply_receipt = fields.Boolean(
+        string="Apply Multiplier to Receipt",
+        default=True,
+    )
+    point_multiplier_apply_zortout = fields.Boolean(
+        string="Apply Multiplier to Zortout",
+        default=True,
+    )
+    point_multiplier_apply_omisell = fields.Boolean(
+        string="Apply Multiplier to Omisell",
+        default=True,
+    )
     min_spending = fields.Float(string="Minimum Spending", required=True)
     max_spending = fields.Float(string="Maximum Spending", required=True)
     is_show_in_ui = fields.Boolean(string="Show In UI", default=True)
@@ -111,20 +129,32 @@ class PartnerTier(models.Model):
     def _inverse_icon_file(self):
         self._inverse_s3_image_file("icon")
 
-    def get_day_point_multiplier(self, dt=None):
+    def applies_day_point_multiplier(self, channel=None):
+        """Whether the day multiplier should apply for the given earn channel."""
+        self.ensure_one()
+        if not channel:
+            return True
+        field_name = POINT_MULTIPLIER_CHANNELS.get(channel)
+        if not field_name:
+            return True
+        return bool(self[field_name])
+
+    def get_day_point_multiplier(self, dt=None, channel=None):
         """Return the point multiplier for the given datetime (Thailand local day)."""
         self.ensure_one()
+        if not self.applies_day_point_multiplier(channel):
+            return 1.0
         local_dt = self._to_thailand_datetime(dt)
         # Monday=0 ... Sunday=6
         field_name = DAY_POINT_MULTIPLIER_FIELDS[local_dt.weekday()]
         return float(self[field_name] or 0)
 
-    def get_effective_convert_points(self, dt=None):
+    def get_effective_convert_points(self, dt=None, channel=None):
         """Convert points adjusted by the day multiplier (lower = more points)."""
         self.ensure_one()
         if self.convert_points <= 0:
             return 0
-        multiplier = self.get_day_point_multiplier(dt)
+        multiplier = self.get_day_point_multiplier(dt, channel=channel)
         if multiplier <= 0:
             return 0
         return self.convert_points / multiplier

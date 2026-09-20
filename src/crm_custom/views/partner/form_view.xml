@@ -169,6 +169,13 @@
                                                     <field name="point_multiplier_sun"/>
                                                 </group>
                                             </group>
+                                            <group string="Apply Multiplier Channels">
+                                                <group>
+                                                    <field name="point_multiplier_apply_receipt"/>
+                                                    <field name="point_multiplier_apply_zortout"/>
+                                                    <field name="point_multiplier_apply_omisell"/>
+                                                </group>
+                                            </group>
                                             <separator string="Promotion Rewards"/>
                                             <field name="promotion_reward_ids" nolabel="1" context="{'default_event': 'tier_promotion', 'default_partner_id': parent.id, 'default_tier_id': id}">
                                                 <list editable="bottom">
