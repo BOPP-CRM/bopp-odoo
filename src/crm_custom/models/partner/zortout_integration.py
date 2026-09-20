@@ -535,7 +535,7 @@ class PartnerZortoutIntegration(models.Model):
                 user.tier_id = tier
         if not tier or tier.convert_points <= 0:
             return 0
-        return tier.convert_points
+        return tier.get_effective_convert_points()
 
     def _ensure_zortout_api_credentials(self):
         self.ensure_one()

@@ -1,5 +1,19 @@
+from datetime import datetime, timedelta
+
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
+
+THAILAND_OFFSET = timedelta(hours=7)
+
+DAY_POINT_MULTIPLIER_FIELDS = (
+    "point_multiplier_mon",
+    "point_multiplier_tue",
+    "point_multiplier_wed",
+    "point_multiplier_thu",
+    "point_multiplier_fri",
+    "point_multiplier_sat",
+    "point_multiplier_sun",
+)
 
 
 class PartnerTier(models.Model):
@@ -29,6 +43,41 @@ class PartnerTier(models.Model):
     )
 
     convert_points = fields.Float(string="Convert Points", required=True, default=25)
+    point_multiplier_mon = fields.Float(
+        string="Point Multiplier (Mon)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_tue = fields.Float(
+        string="Point Multiplier (Tue)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_wed = fields.Float(
+        string="Point Multiplier (Wed)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_thu = fields.Float(
+        string="Point Multiplier (Thu)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_fri = fields.Float(
+        string="Point Multiplier (Fri)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_sat = fields.Float(
+        string="Point Multiplier (Sat)",
+        required=True,
+        default=1.0,
+    )
+    point_multiplier_sun = fields.Float(
+        string="Point Multiplier (Sun)",
+        required=True,
+        default=1.0,
+    )
     min_spending = fields.Float(string="Minimum Spending", required=True)
     max_spending = fields.Float(string="Maximum Spending", required=True)
     is_show_in_ui = fields.Boolean(string="Show In UI", default=True)
@@ -61,6 +110,42 @@ class PartnerTier(models.Model):
 
     def _inverse_icon_file(self):
         self._inverse_s3_image_file("icon")
+
+    def get_day_point_multiplier(self, dt=None):
+        """Return the point multiplier for the given datetime (Thailand local day)."""
+        self.ensure_one()
+        local_dt = self._to_thailand_datetime(dt)
+        # Monday=0 ... Sunday=6
+        field_name = DAY_POINT_MULTIPLIER_FIELDS[local_dt.weekday()]
+        return float(self[field_name] or 0)
+
+    def get_effective_convert_points(self, dt=None):
+        """Convert points adjusted by the day multiplier (lower = more points)."""
+        self.ensure_one()
+        if self.convert_points <= 0:
+            return 0
+        multiplier = self.get_day_point_multiplier(dt)
+        if multiplier <= 0:
+            return 0
+        return self.convert_points / multiplier
+
+    @staticmethod
+    def _to_thailand_datetime(dt=None):
+        if dt is None:
+            utc_dt = fields.Datetime.now()
+        elif isinstance(dt, datetime):
+            utc_dt = dt.replace(tzinfo=None) if dt.tzinfo else dt
+        else:
+            utc_dt = datetime.combine(dt, datetime.min.time())
+        return utc_dt + THAILAND_OFFSET
+
+    @api.constrains(*DAY_POINT_MULTIPLIER_FIELDS)
+    def _check_day_point_multipliers(self):
+        for record in self:
+            for field_name in DAY_POINT_MULTIPLIER_FIELDS:
+                if record[field_name] < 0:
+                    label = record._fields[field_name].string
+                    raise ValidationError(f"{label} ต้องไม่น้อยกว่า 0")
 
     @api.constrains("min_spending", "max_spending")
     def _check_spending_range(self):
