@@ -7,6 +7,7 @@ from . import verify_email
 from . import submit_email
 from . import redeem_point
 from . import coupon
+from . import birthday_coupon
 from . import receipt_redeem
 from . import omisell_claim
 from . import warranty

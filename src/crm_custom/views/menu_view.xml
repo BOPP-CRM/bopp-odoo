@@ -29,6 +29,22 @@
     />
 
     <menuitem
+        id="menu_partner_broadcast"
+        name="Broadcasts"
+        parent="menu_partner_root"
+        action="action_partner_broadcast"
+        sequence="5"
+    />
+
+    <menuitem
+        id="menu_partner_birthday_reward"
+        name="Birthday Rewards"
+        parent="menu_partner_root"
+        action="action_partner_birthday_reward"
+        sequence="6"
+    />
+
+    <menuitem
         id="menu_crm_otp_model"
         name="OTP"
         parent="menu_system_root"

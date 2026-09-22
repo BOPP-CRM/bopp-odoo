@@ -84,6 +84,13 @@ class UserCoupon(models.Model):
         readonly=True,
         ondelete="set null",
     )
+    birthday_reward_id = fields.Many2one(
+        "partner.birthday.reward",
+        string="Birthday Reward",
+        readonly=True,
+        ondelete="set null",
+        index=True,
+    )
     member_reward_event = fields.Selection(
         [
             ("join", "Join"),
