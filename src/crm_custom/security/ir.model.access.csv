@@ -41,3 +41,4 @@ access_partner_zortout_sale_sync_job,access.partner.zortout.sale.sync.job,model_
 access_partner_receipt_sale_sync_job,access.partner.receipt.sale.sync.job,model_partner_receipt_sale_sync_job,,1,1,1,1
 access_partner_omisell_sale_sync_job,access.partner.omisell.sale.sync.job,model_partner_omisell_sale_sync_job,,1,1,1,1
 access_partner_omisell_order_claim,access.partner.omisell.order.claim,model_partner_omisell_order_claim,,1,1,1,1
+access_partner_lazada_order_claim,access.partner.lazada.order.claim,model_partner_lazada_order_claim,,1,1,1,1

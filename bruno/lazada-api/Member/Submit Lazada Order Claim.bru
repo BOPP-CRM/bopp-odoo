@@ -1,0 +1,81 @@
+meta {
+  name: Submit Lazada Order Claim
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/partner/{{partner_slug}}/user/lazada-claim
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{line_access_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "order_number": "{{lazada_order_number}}"
+  }
+}
+
+docs {
+  ## POST /api/partner/{slug}/user/lazada-claim
+
+  สมาชิกกรอกเลข order Lazada ของตัวเองเพื่อขอแต้ม — เช็คสด (synchronous) กับ
+  Lazada ทันที ให้แต้ม**เฉพาะ item ที่ status = delivered** ในคำสั่งซื้อนั้น
+  (ไม่ใช่ทั้งใบ) แล้วบันทึกกันเลข order เดิมถูก claim ซ้ำ ใครกรอกเลขถูกก่อนได้แต้มก่อน
+
+  ### Auth
+  `Authorization: Bearer <line_access_token>` — ต้องเป็น LINE access token จริงของ
+  สมาชิกคนนั้น (ระบบเอาไปเช็คกับ LINE `/v2/profile`) **ไม่ใช่** `portal_token`
+
+  ### Request body
+  ```json
+  { "order_number": "ORD-123456" }
+  ```
+  รองรับทั้ง `order_number` และ `orderNumber` (camelCase)
+
+  ### Response 201 (สำเร็จ — ได้แต้มอย่างน้อย 1 item)
+  ```json
+  {
+    "claim": {
+      "id": 1,
+      "order_number": "ORD-123456",
+      "lazada_order_id": "1234567890",
+      "user_id": 5,
+      "display_name": "สมชาย",
+      "amount": 350.0,
+      "used_flat_fallback": false,
+      "qualifying_item_count": 2,
+      "total_item_count": 3,
+      "reward_value": 3.0,
+      "claimed_at": "2026-09-23 10:15:00"
+    }
+  }
+  ```
+  `qualifying_item_count < total_item_count` = ได้แต้มแค่บางส่วน (item ที่เหลือยังไม่ delivered)
+  ; เลข order นี้จะ**ใช้ claim ซ้ำไม่ได้อีก**ไม่ว่าจะได้แต้มครบหรือไม่ครบก็ตาม (เว้นแต่แอดมิน manual แก้)
+
+  ### Response 400 (`error: claim_not_allowed`) — สาเหตุที่เป็นไปได้
+  | message | เมื่อไหร่ |
+  |---|---|
+  | กรุณาระบุหมายเลขคำสั่งซื้อ | ไม่ได้ส่ง order_number |
+  | คำสั่งซื้อ 'X' ถูกใช้ขอแต้มไปแล้ว | เลขนี้ถูก claim ไปแล้ว (ของตัวเองหรือคนอื่น) |
+  | ยังไม่ได้เชื่อมต่อ Lazada กรุณาเชื่อมต่อร้านค้าก่อน | tenant นี้ยังไม่เชื่อม Lazada / token หลุด |
+  | ไม่พบคำสั่งซื้อนี้ในระบบ | หาไม่เจอใน `/partner/transaction` ของร้านนี้ ย้อนหลัง 90 วัน |
+  | ยังไม่มีสินค้าในคำสั่งซื้อนี้ที่จัดส่งสำเร็จ | เจอ order แต่ไม่มี item ไหน status=delivered เลย — retry ทีหลังได้เมื่อ delivered |
+  | ไม่พบยอดเงินของคำสั่งซื้อ และยังไม่ได้ตั้งค่าแต้มสำรอง (flat point) | item delivered แต่ไม่มี field ราคา และแอดมินยังไม่ตั้ง flat fallback |
+
+  ### Response 404
+  - `partner_not_found` — slug ผิด
+  - `user_not_found` — LINE user นี้ยังไม่เคยสมัครสมาชิกกับ partner นี้
+
+  ### Response 401
+  LINE access token หมดอายุ/ไม่ถูกต้อง (จาก `get_line_profile_from_request`)
+
+  Source: `LazadaClaimController.submit_lazada_claim` (`controllers/user/lazada_claim.py`) →
+  `partner.lazada.order.claim.verify_order_for_points()` (`models/partner/lazada_order_claim.py`)
+}

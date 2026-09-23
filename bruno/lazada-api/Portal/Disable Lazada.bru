@@ -1,0 +1,40 @@
+meta {
+  name: Disable Lazada
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/api/portal/lazada/disable
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{portal_token}}
+}
+
+docs {
+  ## POST /api/portal/lazada/disable
+
+  ปิดการใช้งาน Lazada integration ของ tenant นี้ (`lazada_enabled=false`)
+  ไม่ลบ token ที่เก็บไว้ — เชื่อมต่อใหม่ได้ทันทีด้วย "Start Lazada OAuth Connect"
+  โดยไม่ต้องรอ token เดิมหมดอายุ
+
+  ### Response 200
+  ```json
+  {
+    "lazada": {
+      "enabled": false,
+      "configured": true,
+      "seller_id": "12345",
+      "country": "TH",
+      "access_token_expires_at": "2026-09-30 12:00:00",
+      "token_masked": "...aBcD"
+    }
+  }
+  ```
+
+  Source: `PartnerLazadaController.disable_lazada` (`controllers/portal/lazada.py`) →
+  `partner.disable_lazada_for_api()` (`models/partner/lazada_integration.py`)
+}

@@ -9,4 +9,5 @@ from . import redeem_point
 from . import coupon
 from . import receipt_redeem
 from . import omisell_claim
+from . import lazada_claim
 from . import warranty

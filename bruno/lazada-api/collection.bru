@@ -1,0 +1,26 @@
+docs {
+  # Lazada Integration API
+
+  ครอบคลุม 3 ชุด endpoint ของฟีเจอร์ Lazada Open Platform integration ใน `crm_custom`:
+
+  - **Portal** — พนักงานของ partner (tenant) ใช้ตั้งค่า/เชื่อมต่อ Lazada shop ผ่าน portal admin
+  - **Member** — สมาชิกปลายทาง (LINE) ใช้กรอกเลข order เพื่อขอแต้ม
+  - **Integrations** — endpoint ที่ Lazada เรียกกลับมาเอง (OAuth callback) ไม่ได้มีไว้ให้เรียกตรงๆ จาก client ปกติ
+
+  ## Environment variables ที่ต้องตั้งก่อนใช้ (ดู environments/Local.bru)
+
+  | ตัวแปร | คืออะไร | หาได้จากไหน |
+  |---|---|---|
+  | `base_url` | URL ของ Odoo backend | เช่น `http://localhost:8069` |
+  | `portal_token` | Bearer token ของ portal admin (คนละตัวกับ Lazada token) | login portal แล้วดึงจาก response หรือ `scripts/seed_portal_admin.py` |
+  | `partner_slug` | slug ของ tenant ที่จะทดสอบ | ตาราง `partner.slug` |
+  | `line_access_token` | LINE access token ของสมาชิกที่ login ผ่าน LIFF (ใช้ยืนยันตัวตนสมาชิก **ไม่ใช่** portal_token) | ดึงจาก LIFF SDK ตอน login จริง หรือ mock ตาม `util/line_auth.py` |
+  | `lazada_order_number` | เลข order Lazada ที่จะทดสอบ claim | ต้องเป็น order ที่มีอยู่จริงในร้าน sandbox ที่เชื่อมต่อไว้ |
+
+  ## Auth คนละแบบต่อกลุ่ม (สำคัญ อย่าสลับกัน)
+
+  - **Portal**: header `Authorization: Bearer {{portal_token}}` (หรือ `X-api-key`) — คนของร้านค้า
+  - **Member**: header `Authorization: Bearer {{line_access_token}}` — เป็น LINE access token จริง ระบบเอาไปเช็คกับ LINE `/v2/profile` ตรงๆ (`util/line_auth.py`) ไม่ใช่ token ของเราเอง
+
+  อ้างอิงโค้ด: `src/crm_custom/controllers/portal/lazada.py`, `src/crm_custom/controllers/user/lazada_claim.py`, `src/crm_custom/controllers/integrations/lazada.py`, `src/crm_custom/models/partner/lazada_integration.py`, `src/crm_custom/models/partner/lazada_order_claim.py`
+}
