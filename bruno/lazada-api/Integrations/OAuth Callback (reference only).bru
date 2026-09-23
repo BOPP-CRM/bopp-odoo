@@ -1,0 +1,41 @@
+meta {
+  name: OAuth Callback (reference only)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/integrations/lazada/oauth/callback?code=REPLACE_WITH_REAL_CODE&state=REPLACE_WITH_STATE_FROM_CONNECT_START
+  body: none
+  auth: none
+}
+
+params:query {
+  code: REPLACE_WITH_REAL_CODE
+  state: REPLACE_WITH_STATE_FROM_CONNECT_START
+}
+
+docs {
+  ## GET /api/integrations/lazada/oauth/callback
+
+  **ปกติไม่ต้องยิงเองใน Bruno** — นี่คือ `redirect_uri` ที่ Lazada ใช้ส่ง browser
+  ของแอดมินกลับมาหลังกด Authorize (ดู "Start Lazada OAuth Connect" ในโฟลเดอร์ Portal)
+  เก็บไว้ในนี้เพื่ออ้างอิง query param เท่านั้น
+
+  ### Query params (มาจาก Lazada)
+  - `code` — authorization code แลกเป็น access/refresh token
+  - `state` — ค่าเดียวกับที่ได้จาก `authorize_url` ตอน start connect ใช้จับคู่ว่าเป็น tenant ไหน (อายุ 10 นาที)
+
+  ### พฤติกรรม
+  - หา `state` ไม่เจอ/หมดอายุ → แสดงหน้า error สั้นๆ ไม่ throw 500
+  - เจอ → แลก `code` เป็น token ผ่าน Lazada Auth API แล้วเขียนลง `partner`,
+    ตั้ง `lazada_enabled=true`, เคลียร์ `lazada_oauth_state`
+  - สำเร็จ/ไม่สำเร็จ → redirect ไป `PORTAL_FRONTEND_PATH/lazada/callback?status=...&message=...`
+    ถ้าไม่ได้ตั้ง `PORTAL_FRONTEND_PATH` ไว้ → คืน HTML สรุปผลง่ายๆ แทน
+
+  ทดสอบจริงต้องทำผ่านเบราว์เซอร์ (ยิงตรงด้วย `code` ปลอมจะ fail เพราะ Lazada
+  ตรวจ code ฝั่งเขาเอง) — ยิงจาก Bruno มีประโยชน์แค่ทดสอบเคส `state` ผิด/หมดอายุ
+
+  Source: `IntegrationsLazadaController.lazada_oauth_callback` (`controllers/integrations/lazada.py`) →
+  `partner.complete_lazada_oauth()` (`models/partner/lazada_integration.py`)
+}
