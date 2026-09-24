@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from psycopg2 import IntegrityError
 
@@ -107,8 +107,11 @@ class PartnerLazadaOrderClaim(models.Model):
         return claim
 
     def _find_lazada_order(self, partner, order_number):
+        # Lazada rejects a bare YYYY-MM-DD (error E017 Invalid Date Format) —
+        # created_after/created_before need full ISO8601 with a timezone offset.
         today = fields.Date.context_today(self)
-        created_after = fields.Date.to_string(today - timedelta(days=LAZADA_TRANSACTION_LOOKBACK_DAYS))
+        lookback_date = today - timedelta(days=LAZADA_TRANSACTION_LOOKBACK_DAYS)
+        created_after = datetime.combine(lookback_date, datetime.min.time()).strftime("%Y-%m-%dT%H:%M:%S+07:00")
 
         for status in LAZADA_QUALIFYING_STATUSES:
             offset = 0
