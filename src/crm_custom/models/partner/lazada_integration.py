@@ -140,6 +140,8 @@ class PartnerLazadaIntegration(models.Model):
                                    offset=0, limit=LAZADA_TRANSACTION_PAGE_SIZE, **extra_params):
         self.ensure_one()
         params = {"offset": offset, "limit": min(limit, LAZADA_TRANSACTION_PAGE_SIZE)}
+        if self.lazada_seller_id:
+            params["seller_id"] = self.lazada_seller_id
         if status:
             params["status"] = status
         if created_after:
