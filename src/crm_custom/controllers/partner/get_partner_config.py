@@ -35,6 +35,10 @@ class PartnerConfigController(http.Controller):
             "line": {
                 "liff_id": partner.partner_line_liff_id,
             },
+            "integrations": {
+                "lazada": {"enabled": bool(partner.lazada_enabled)},
+                "omisell": {"enabled": bool(partner.omisell_enabled)},
+            },
             "ui": self._serialize_ui_config(partner),
             "ads": self._serialize_active_ads(partner),
             "tier": self._serialize_tier(partner),
