@@ -16,10 +16,6 @@ _logger = logging.getLogger(__name__)
 
 LAZADA_API_BASE_URL = "https://api.lazada.co.th/rest"
 LAZADA_AUTH_BASE_URL = "https://auth.lazada.com/rest"
-LAZADA_QUALIFYING_STATUSES = ["delivered"]
-LAZADA_TRANSACTION_LOOKBACK_DAYS = 90
-LAZADA_TRANSACTION_MAX_PAGES = 20
-LAZADA_TRANSACTION_PAGE_SIZE = 100
 LAZADA_OAUTH_STATE_TTL_MINUTES = 10
 LAZADA_TOKEN_REFRESH_MARGIN_HOURS = 24
 
@@ -136,23 +132,17 @@ class PartnerLazadaIntegration(models.Model):
 
         return payload
 
-    def fetch_lazada_transactions(self, status=None, created_after=None, created_before=None,
-                                   offset=0, limit=LAZADA_TRANSACTION_PAGE_SIZE, **extra_params):
+    def fetch_lazada_order_items(self, order_id):
+        """Look up a single order's line items by order_id (== the order
+        number a buyer sees/enters — confirmed against the sandbox).
+        Returns [] if Lazada errors (order_id not found) or has no items.
+        """
         self.ensure_one()
-        params = {"offset": offset, "limit": min(limit, LAZADA_TRANSACTION_PAGE_SIZE)}
-        if self.lazada_seller_id:
-            params["seller_id"] = self.lazada_seller_id
-        if status:
-            params["status"] = status
-        if created_after:
-            params["created_after"] = created_after
-        if created_before:
-            params["created_before"] = created_before
-        params.update(extra_params)
-        payload = self._lazada_call("GET", "/partner/transaction", params=params)
+        try:
+            payload = self._lazada_call("GET", "/order/items/get", params={"order_id": order_id})
+        except ValidationError:
+            return []
         data = payload.get("data")
-        if isinstance(data, dict):
-            return data.get("module") or data.get("list") or []
         return data if isinstance(data, list) else []
 
     # ------------------------------------------------------------------
@@ -227,7 +217,9 @@ class PartnerLazadaIntegration(models.Model):
         if refresh_expires_in:
             vals["lazada_refresh_token_expires_at"] = now + timedelta(seconds=int(refresh_expires_in))
 
-        country_user_info = payload.get("country_user_info")
+        # Confirmed against the real /auth/token/create and /auth/token/refresh
+        # responses: the key is "country_user_info_list", not "country_user_info".
+        country_user_info = payload.get("country_user_info_list") or payload.get("country_user_info")
         if isinstance(country_user_info, list) and country_user_info:
             first = country_user_info[0]
             if isinstance(first, dict):

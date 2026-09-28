@@ -1,18 +1,10 @@
 import json
 import logging
-from datetime import datetime, timedelta
 
 from psycopg2 import IntegrityError
 
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
-
-from .lazada_integration import (
-    LAZADA_QUALIFYING_STATUSES,
-    LAZADA_TRANSACTION_LOOKBACK_DAYS,
-    LAZADA_TRANSACTION_MAX_PAGES,
-    LAZADA_TRANSACTION_PAGE_SIZE,
-)
 
 _logger = logging.getLogger(__name__)
 
@@ -62,11 +54,13 @@ class PartnerLazadaOrderClaim(models.Model):
 
         partner._ensure_lazada_ready()
 
-        order = self._find_lazada_order(partner, order_number)
-        if not order:
+        # order_number the buyer enters IS the Lazada order_id (confirmed
+        # against the sandbox) — /order/items/get looks it up directly, no
+        # separate "does this order exist" call needed.
+        items = partner.fetch_lazada_order_items(order_number)
+        if not items:
             raise ValidationError("ไม่พบคำสั่งซื้อนี้ในระบบ")
 
-        items = order.get("member_sub_order_list") or []
         qualifying_items = [
             item for item in items
             if str(item.get("status") or "").strip().lower() == DELIVERED_ITEM_STATUS
@@ -90,7 +84,7 @@ class PartnerLazadaOrderClaim(models.Model):
                 claim = self.create({
                     "partner_id": partner.id,
                     "order_number": order_number,
-                    "lazada_order_id": str(order.get("order_id") or "") or False,
+                    "lazada_order_id": str(items[0].get("order_id") or "") or False,
                     "user_id": user.id,
                     "amount": amount,
                     "used_flat_fallback": used_flat_fallback,
@@ -105,32 +99,6 @@ class PartnerLazadaOrderClaim(models.Model):
             raise ValidationError(f"คำสั่งซื้อ '{order_number}' ถูกใช้ขอแต้มไปแล้ว") from error
 
         return claim
-
-    def _find_lazada_order(self, partner, order_number):
-        # Lazada rejects a bare YYYY-MM-DD (error E017 Invalid Date Format) —
-        # created_after/created_before need full ISO8601 with a timezone offset.
-        today = fields.Date.context_today(self)
-        lookback_date = today - timedelta(days=LAZADA_TRANSACTION_LOOKBACK_DAYS)
-        created_after = datetime.combine(lookback_date, datetime.min.time()).strftime("%Y-%m-%dT%H:%M:%S+07:00")
-
-        for status in LAZADA_QUALIFYING_STATUSES:
-            offset = 0
-            for _page in range(LAZADA_TRANSACTION_MAX_PAGES):
-                orders = partner.fetch_lazada_transactions(
-                    status=status,
-                    created_after=created_after,
-                    offset=offset,
-                    limit=LAZADA_TRANSACTION_PAGE_SIZE,
-                )
-                if not orders:
-                    break
-                for order in orders:
-                    if str(order.get("order_number") or "").strip() == order_number:
-                        return order
-                if len(orders) < LAZADA_TRANSACTION_PAGE_SIZE:
-                    break
-                offset += LAZADA_TRANSACTION_PAGE_SIZE
-        return False
 
     @staticmethod
     def _parse_amount(value):
