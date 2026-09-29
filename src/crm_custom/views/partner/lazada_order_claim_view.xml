@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_lazada_order_claim_tree" model="ir.ui.view">
+        <field name="name">partner.lazada.order.claim.tree</field>
+        <field name="model">partner.lazada.order.claim</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="claimed_at"/>
+                <field name="partner_id"/>
+                <field name="order_number"/>
+                <field name="user_id"/>
+                <field name="amount"/>
+                <field name="qualifying_item_count"/>
+                <field name="total_item_count"/>
+                <field name="used_flat_fallback"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_partner_lazada_order_claim_form" model="ir.ui.view">
+        <field name="name">partner.lazada.order.claim.form</field>
+        <field name="model">partner.lazada.order.claim</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="partner_id" readonly="1"/>
+                            <field name="order_number" readonly="1"/>
+                            <field name="lazada_order_id" readonly="1"/>
+                            <field name="user_id" readonly="1"/>
+                            <field name="claimed_at" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="amount" readonly="1"/>
+                            <field name="used_flat_fallback" readonly="1"/>
+                            <field name="qualifying_item_count" readonly="1"/>
+                            <field name="total_item_count" readonly="1"/>
+                            <field name="spending_point_id" readonly="1"/>
+                            <field name="reward_point_id" readonly="1"/>
+                        </group>
+                    </group>
+                    <group string="Item Snapshot">
+                        <field name="item_snapshot" readonly="1" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_lazada_order_claim" model="ir.actions.act_window">
+        <field name="name">Lazada Order Claims</field>
+        <field name="res_model">partner.lazada.order.claim</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

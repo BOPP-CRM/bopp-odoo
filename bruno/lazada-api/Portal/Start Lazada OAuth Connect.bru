@@ -1,0 +1,50 @@
+meta {
+  name: Start Lazada OAuth Connect
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{base_url}}/api/portal/lazada/connect/start
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{portal_token}}
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  ## POST /api/portal/lazada/connect/start
+
+  เริ่ม OAuth flow เชื่อมต่อร้าน Lazada — server จะ generate `state` แบบสุ่ม
+  (อายุ 10 นาที) ผูกกับ tenant นี้ แล้วคืน `authorize_url` ให้ frontend
+  redirect browser ของแอดมินไปที่ Lazada เอง
+
+  **ไม่มี body ที่ต้องส่ง** (ส่ง `{}` ก็พอ)
+
+  ### Response 200
+  ```json
+  {
+    "authorize_url": "https://auth.lazada.com/oauth/authorize?response_type=code&force_auth=true&redirect_uri=<base_url>/api/integrations/lazada/oauth/callback&client_id=142409&state=<random>"
+  }
+  ```
+
+  ### ขั้นตอนถัดไป (ทำนอก Bruno)
+  1. เปิด `authorize_url` ในเบราว์เซอร์ → login ร้าน Lazada (sandbox: `LzdOp_TH_test@163.com`) → กด Authorize
+  2. Lazada จะ redirect กลับไปที่ "OAuth Callback" (ดูโฟลเดอร์ Integrations) — ขั้นตอนนี้ทำโดยเบราว์เซอร์เอง ไม่ต้องยิงเองใน Bruno
+  3. เชื่อมต่อสำเร็จแล้วเรียก "Get Lazada Status" ใหม่ → ควรเห็น `enabled: true`
+
+  ### Response 400 (ยังไม่ได้ตั้งค่า App Key/Secret)
+  ```json
+  {"error": "validation_error", "message": "ยังไม่ได้ตั้งค่า LAZADA_APP_KEY/LAZADA_APP_SECRET"}
+  ```
+
+  Source: `PartnerLazadaController.start_lazada_connect` (`controllers/portal/lazada.py`) →
+  `partner.start_lazada_oauth_for_api()` (`models/partner/lazada_integration.py`)
+}
