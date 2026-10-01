@@ -27,3 +27,5 @@ from . import omisell_order
 from . import omisell_claim
 from . import omisell_sale_sync
 from . import omisell_webhook_log
+from . import lazada_integration
+from . import lazada_order_claim

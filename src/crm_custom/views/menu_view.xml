@@ -29,6 +29,14 @@
     />
 
     <menuitem
+        id="menu_partner_lazada_order_claim"
+        name="Lazada Order Claims"
+        parent="menu_partner_root"
+        action="action_partner_lazada_order_claim"
+        sequence="4"
+    />
+
+    <menuitem
         id="menu_crm_otp_model"
         name="OTP"
         parent="menu_system_root"

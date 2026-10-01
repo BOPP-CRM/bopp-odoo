@@ -1,0 +1,40 @@
+meta {
+  name: Get Lazada Status
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/api/portal/lazada
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{portal_token}}
+}
+
+docs {
+  ## GET /api/portal/lazada
+
+  ดูสถานะการเชื่อมต่อ Lazada ของ tenant ปัจจุบัน (token ถูก mask ไว้เสมอ)
+
+  ### Response 200
+  ```json
+  {
+    "lazada": {
+      "enabled": true,
+      "configured": true,
+      "seller_id": "12345",
+      "country": "TH",
+      "access_token_expires_at": "2026-09-30 12:00:00",
+      "token_masked": "...aBcD"
+    }
+  }
+  ```
+
+  `enabled=false, configured=false` = ยังไม่เคยเชื่อมต่อเลย ต้องเริ่มจาก "Start Lazada OAuth Connect" ก่อน
+
+  Source: `PartnerLazadaController.get_lazada_status` (`controllers/portal/lazada.py`) →
+  `partner.serialize_lazada_status()` (`models/partner/lazada_integration.py`)
+}

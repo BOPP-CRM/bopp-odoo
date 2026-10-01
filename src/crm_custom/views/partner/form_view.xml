@@ -131,6 +131,13 @@
                                             <field name="min_spending" string="Min Point"/>
                                             <field name="max_spending" string="Max Point"/>
                                             <field name="convert_points"/>
+                                            <field name="point_multiplier_mon" string="x Mon"/>
+                                            <field name="point_multiplier_tue" string="x Tue"/>
+                                            <field name="point_multiplier_wed" string="x Wed"/>
+                                            <field name="point_multiplier_thu" string="x Thu"/>
+                                            <field name="point_multiplier_fri" string="x Fri"/>
+                                            <field name="point_multiplier_sat" string="x Sat"/>
+                                            <field name="point_multiplier_sun" string="x Sun"/>
                                             <field name="is_show_in_ui" widget="boolean_toggle"/>
                                         </list>
                                         <form>
@@ -147,6 +154,26 @@
                                                     <field name="min_spending" string="Min Point"/>
                                                     <field name="max_spending" string="Max Point"/>
                                                     <field name="is_show_in_ui"/>
+                                                </group>
+                                            </group>
+                                            <group string="Point Multiplier by Day">
+                                                <group>
+                                                    <field name="point_multiplier_mon"/>
+                                                    <field name="point_multiplier_tue"/>
+                                                    <field name="point_multiplier_wed"/>
+                                                    <field name="point_multiplier_thu"/>
+                                                </group>
+                                                <group>
+                                                    <field name="point_multiplier_fri"/>
+                                                    <field name="point_multiplier_sat"/>
+                                                    <field name="point_multiplier_sun"/>
+                                                </group>
+                                            </group>
+                                            <group string="Apply Multiplier Channels">
+                                                <group>
+                                                    <field name="point_multiplier_apply_receipt"/>
+                                                    <field name="point_multiplier_apply_zortout"/>
+                                                    <field name="point_multiplier_apply_omisell"/>
                                                 </group>
                                             </group>
                                             <separator string="Promotion Rewards"/>
@@ -307,6 +334,16 @@
                                     <field name="last_webhook_at"/>
                                 </list>
                             </field>
+                        </page>
+
+                        <page string="Lazada" name="lazada">
+                            <group string="OAuth Connection">
+                                <field name="lazada_enabled" widget="boolean_toggle"/>
+                                <field name="lazada_seller_id" readonly="1"/>
+                                <field name="lazada_country"/>
+                                <field name="lazada_access_token_expires_at" readonly="1"/>
+                                <field name="lazada_flat_point_value"/>
+                            </group>
                         </page>
 
                         <page string="Warranty" name="warranty" invisible="not ui_warranty_enabled">
