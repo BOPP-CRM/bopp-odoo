@@ -9,6 +9,7 @@ from . import sales
 from . import openai
 from . import warranties
 from . import team
+from . import appearance
 from . import dashboard
 from . import api_key
 from . import zortout
