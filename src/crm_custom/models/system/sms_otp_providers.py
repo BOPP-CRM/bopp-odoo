@@ -41,13 +41,18 @@ def _parse_remaining_credit(payload):
     return 0
 
 
-def _parse_standard_sms_credit(payload):
+def _parse_pool_sms_credit(payload, pool):
+    """Read api-v2 /credit balance for standard or corporate pool."""
     if not isinstance(payload, dict):
         return 0
 
     remaining = payload.get("remaining_credit", payload.get("balance"))
     if isinstance(remaining, dict):
-        return int(remaining.get("standard") or 0)
+        if pool == "corporate":
+            return int(remaining.get("corporate") or 0)
+        if pool == "standard":
+            return int(remaining.get("standard") or 0)
+        return int(remaining.get("standard") or 0) + int(remaining.get("corporate") or 0)
     if isinstance(remaining, (int, float)):
         return int(remaining)
     return 0
@@ -84,7 +89,7 @@ class SmsOtpProviderMixin(models.AbstractModel):
     @api.model
     def _thaibulksms_otp_force(self):
         """OTP API defaults to corporate credit; use standard/corporate via force param."""
-        force = (_env("THAIBULKSMS_OTP_FORCE", "standard") or "standard").strip().lower()
+        force = (_env("THAIBULKSMS_OTP_FORCE", "corporate") or "corporate").strip().lower()
         if force in ("standard", "corporate"):
             return force
         if force in ("premium",):
@@ -140,7 +145,7 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return _parse_remaining_credit(response.json())
 
     @api.model
-    def _thaibulksms_standard_sms_remaining_credit(self):
+    def _thaibulksms_sms_api_remaining_credit(self, pool):
         if not self._thaibulksms_sms_api_configured():
             return None
 
@@ -152,13 +157,15 @@ class SmsOtpProviderMixin(models.AbstractModel):
                 timeout=30,
             )
         except requests.RequestException as exc:
-            _logger.warning("crm.otp thaibulksms standard credit check failed: %s", exc)
+            _logger.warning(
+                "crm.otp thaibulksms %s credit check failed: %s", pool, exc
+            )
             return 0
 
         if response.status_code != 200:
             return 0
 
-        return _parse_standard_sms_credit(response.json())
+        return _parse_pool_sms_credit(response.json(), pool)
 
     @api.model
     def _thaibulksms_cached_otp_credit(self):
@@ -183,10 +190,11 @@ class SmsOtpProviderMixin(models.AbstractModel):
         if not self._thaibulksms_otp_configured():
             return 0
 
-        if self._thaibulksms_otp_force() == "standard":
-            standard_credit = self._thaibulksms_standard_sms_remaining_credit()
-            if standard_credit is not None:
-                return standard_credit
+        force = self._thaibulksms_otp_force()
+        if force in ("standard", "corporate"):
+            api_credit = self._thaibulksms_sms_api_remaining_credit(force)
+            if api_credit is not None:
+                return api_credit
 
         cached = self._thaibulksms_cached_otp_credit()
         if cached is not None:
