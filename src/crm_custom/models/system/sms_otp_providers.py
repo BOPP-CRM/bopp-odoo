@@ -127,27 +127,6 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return _parse_remaining_credit(response.json())
 
     @api.model
-    def _thaibulksms_sms_remaining_credit(self):
-        if not self._thaibulksms_sms_api_configured():
-            return None
-
-        url = "https://api-v2.thaibulksms.com/credit"
-        try:
-            response = requests.get(
-                url,
-                auth=(_env("THAIBULKSMS_API_KEY"), _env("THAIBULKSMS_API_SECRET")),
-                timeout=30,
-            )
-        except requests.RequestException as exc:
-            _logger.warning("crm.otp thaibulksms SMS credit check failed: %s", exc)
-            return 0
-
-        if response.status_code != 200:
-            return 0
-
-        return _parse_remaining_credit(response.json())
-
-    @api.model
     def _thaibulksms_standard_sms_remaining_credit(self):
         if not self._thaibulksms_sms_api_configured():
             return None
