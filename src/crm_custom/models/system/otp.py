@@ -169,6 +169,32 @@ class OTP(models.Model):
         text = (reason or "").lower()
         return "insufficient" in text and "credit" in text
 
+    def send_sms_otp_via_provider(self, provider):
+        """Send SMS OTP using a single provider (admin test tool; no weighted fallback)."""
+        self.ensure_one()
+        if self.type != "phone":
+            raise ValidationError("SMS OTP can only be sent for phone type records.")
+
+        self.write({"sms_provider": provider})
+        result, detail = self._attempt_send_sms_provider(provider)
+        if not result:
+            self.make_as_fail(detail or "failed to send sms otp.")
+            return False
+
+        self.write({
+            "otp": result.get("transaction_id"),
+            "ref": result.get("ref"),
+        })
+        log_reason = f"[{provider}] {detail}"
+        self.make_as_send(log_reason)
+        _logger.info(
+            "crm.otp SMS OTP test sent via %s (id=%s recipient=%s)",
+            provider,
+            self.id,
+            self.recipient,
+        )
+        return result
+
     def send_sms_otp(self):
         primary = self._pick_weighted_provider()
         if not primary:

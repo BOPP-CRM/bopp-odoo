@@ -1,6 +1,6 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.56",
+    "version": "1.0.57",
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
@@ -55,6 +55,7 @@
         "views/system/otp_table_view.xml",
         "views/system/otp_form_view.xml",
         "views/system/otp_action_view.xml",
+        "views/system/otp_sms_test_wizard_view.xml",
         "views/menu_view.xml",
     ],
     "installable": True,
