@@ -1,6 +1,6 @@
 {
     "name": "CRM Custom Module",
-    "version": "1.0.60",
+    "version": "1.0.62",
     "summary": "CRM Custom Module",
     "author": "tk dev",
     "depends": ["base", "web", "mail"],
