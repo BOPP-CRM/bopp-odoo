@@ -41,6 +41,18 @@ def _parse_remaining_credit(payload):
     return 0
 
 
+def _parse_standard_sms_credit(payload):
+    if not isinstance(payload, dict):
+        return 0
+
+    remaining = payload.get("remaining_credit", payload.get("balance"))
+    if isinstance(remaining, dict):
+        return int(remaining.get("standard") or 0)
+    if isinstance(remaining, (int, float)):
+        return int(remaining)
+    return 0
+
+
 class SmsOtpProviderMixin(models.AbstractModel):
     _name = "crm.sms.otp.provider.mixin"
     _description = "SMS OTP provider helpers"
@@ -68,6 +80,24 @@ class SmsOtpProviderMixin(models.AbstractModel):
     @api.model
     def _thaibulksms_otp_configured(self):
         return all([_env("THAIBULKSMS_OTP_KEY"), _env("THAIBULKSMS_OTP_SECRET")])
+
+    @api.model
+    def _thaibulksms_otp_force(self):
+        """OTP API defaults to corporate credit; use standard/corporate via force param."""
+        force = (_env("THAIBULKSMS_OTP_FORCE", "standard") or "standard").strip().lower()
+        if force in ("standard", "corporate"):
+            return force
+        if force in ("premium",):
+            return "corporate"
+        return False
+
+    @api.model
+    def _thaibulksms_otp_payload_extras(self):
+        extras = {}
+        force = self._thaibulksms_otp_force()
+        if force:
+            extras["force"] = force
+        return extras
 
     @api.model
     def _thaibulksms_sms_api_configured(self):
@@ -118,6 +148,27 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return _parse_remaining_credit(response.json())
 
     @api.model
+    def _thaibulksms_standard_sms_remaining_credit(self):
+        if not self._thaibulksms_sms_api_configured():
+            return None
+
+        url = "https://api-v2.thaibulksms.com/credit"
+        try:
+            response = requests.get(
+                url,
+                auth=(_env("THAIBULKSMS_API_KEY"), _env("THAIBULKSMS_API_SECRET")),
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            _logger.warning("crm.otp thaibulksms standard credit check failed: %s", exc)
+            return 0
+
+        if response.status_code != 200:
+            return 0
+
+        return _parse_standard_sms_credit(response.json())
+
+    @api.model
     def _thaibulksms_cached_otp_credit(self):
         icp = self.env["ir.config_parameter"].sudo()
         raw = icp.get_param(THAIBULKSMS_OTP_CREDIT_CACHE_KEY)
@@ -140,7 +191,11 @@ class SmsOtpProviderMixin(models.AbstractModel):
         if not self._thaibulksms_otp_configured():
             return 0
 
-        # OTP wallet is separate from api-v2 Standard/Corporate SMS balance.
+        if self._thaibulksms_otp_force() == "standard":
+            standard_credit = self._thaibulksms_standard_sms_remaining_credit()
+            if standard_credit is not None:
+                return standard_credit
+
         cached = self._thaibulksms_cached_otp_credit()
         if cached is not None:
             return cached
@@ -232,6 +287,7 @@ class SmsOtpProviderMixin(models.AbstractModel):
             "key": _env("THAIBULKSMS_OTP_KEY"),
             "secret": _env("THAIBULKSMS_OTP_SECRET"),
             "msisdn": msisdn,
+            **self._thaibulksms_otp_payload_extras(),
         }
 
         try:
@@ -307,6 +363,7 @@ class SmsOtpProviderMixin(models.AbstractModel):
             "secret": _env("THAIBULKSMS_OTP_SECRET"),
             "token": self.otp,
             "pin": otp_code,
+            **self._thaibulksms_otp_payload_extras(),
         }
 
         try:
