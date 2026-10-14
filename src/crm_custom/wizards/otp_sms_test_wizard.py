@@ -3,6 +3,8 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from ...util.phone import is_valid_th_msisdn, normalize_th_msisdn
+
 from ..models.system.sms_otp_providers import GODYSMS_PROVIDER, THAIBULKSMS_PROVIDER
 
 
@@ -55,8 +57,14 @@ class OtpSmsTestWizard(models.TransientModel):
         if not phone:
             raise ValidationError("Enter a phone number.")
 
+        msisdn = normalize_th_msisdn(phone)
+        if not is_valid_th_msisdn(msisdn):
+            raise ValidationError(
+                "Invalid Thai mobile number. Examples: 0646614513, 646614513, or 66646614513."
+            )
+
         otp = self.env["crm.otp"].sudo().create({
-            "recipient": phone,
+            "recipient": msisdn,
             "type": "phone",
             "key": "sms_test",
             "key_id": str(self.env.user.id),

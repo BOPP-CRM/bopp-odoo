@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
             <form string="SMS OTP Test">
                 <group string="Send test SMS">
-                    <field name="phone" placeholder="66812345678"/>
+                    <field name="phone" placeholder="0646614513 or 66646614513"/>
                     <field name="partner_id"/>
                     <field name="sms_provider"/>
                 </group>
