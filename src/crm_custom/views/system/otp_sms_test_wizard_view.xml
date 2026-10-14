@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_otp_sms_test_wizard_form" model="ir.ui.view">
+        <field name="name">crm.otp.sms.test.wizard.form</field>
+        <field name="model">crm.otp.sms.test.wizard</field>
+        <field name="arch" type="xml">
+            <form string="SMS OTP Test">
+                <group string="Send test SMS">
+                    <field name="phone" placeholder="66812345678"/>
+                    <field name="partner_id"/>
+                    <field name="sms_provider"/>
+                </group>
+                <group string="Send result" invisible="not otp_id">
+                    <field name="otp_id"/>
+                    <field name="send_success" widget="boolean_toggle"/>
+                    <field name="send_detail"/>
+                </group>
+                <group string="Verify OTP" invisible="not otp_id">
+                    <field name="otp_pin" placeholder="6-digit code from SMS"/>
+                    <field name="verify_success" widget="boolean_toggle" invisible="not verify_detail"/>
+                    <field name="verify_detail" invisible="not verify_detail"/>
+                </group>
+                <footer>
+                    <button
+                        name="action_send_test_sms"
+                        string="Send test SMS"
+                        type="object"
+                        class="btn-primary"
+                    />
+                    <button
+                        name="action_verify_otp"
+                        string="Verify OTP"
+                        type="object"
+                        class="btn-secondary"
+                        invisible="not otp_id or not send_success"
+                    />
+                    <button string="Close" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_crm_otp_sms_test_wizard" model="ir.actions.act_window">
+        <field name="name">SMS OTP Test</field>
+        <field name="res_model">crm.otp.sms.test.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>
