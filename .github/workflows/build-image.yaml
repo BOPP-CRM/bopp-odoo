@@ -11,7 +11,7 @@ on:
       - dev
 
 jobs:
-  Build:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,3 +37,25 @@ jobs:
             docker tag ghcr.io/bopp-crm/bopp-odoo:${{ github.sha }} ghcr.io/bopp-crm/bopp-odoo:dev
             docker push ghcr.io/bopp-crm/bopp-odoo:dev
           fi
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/dev'
+    steps:
+      - name: Dispatch tk-k8s (dev/crm-backend)
+        env:
+          GH_TOKEN: ${{ secrets.K8S_DEPLOY_TOKEN }}
+        run: |
+          set -e
+          if [ -z "$GH_TOKEN" ]; then
+            echo "Skip auto-deploy: add repo secret K8S_DEPLOY_TOKEN (PAT with workflow scope on algnot/tk-k8s)"
+            echo "Then run Apply K8s Config with service=dev/crm-backend namespace=dev version=${{ github.sha }} skip_migrate=false"
+            exit 0
+          fi
+          gh workflow run "Apply K8s Config" --repo algnot/tk-k8s \
+            -f service=dev/crm-backend \
+            -f namespace=dev \
+            -f version=${{ github.sha }} \
+            -f skip_migrate=false \
+            -f install_monitoring=false
