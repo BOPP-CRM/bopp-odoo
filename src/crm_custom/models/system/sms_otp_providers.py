@@ -140,15 +140,12 @@ class SmsOtpProviderMixin(models.AbstractModel):
         if not self._thaibulksms_otp_configured():
             return 0
 
-        sms_credit = self._thaibulksms_sms_remaining_credit()
-        if sms_credit is not None:
-            return sms_credit
-
+        # OTP wallet is separate from api-v2 Standard/Corporate SMS balance.
         cached = self._thaibulksms_cached_otp_credit()
         if cached is not None:
             return cached
 
-        return 1
+        return 0
 
     @api.model
     def _provider_has_credit(self, provider):
@@ -248,6 +245,8 @@ class SmsOtpProviderMixin(models.AbstractModel):
             return None, f"failed to send sms otp (thaibulksms): {exc}"
 
         if response.status_code not in (200, 201):
+            if "INSUFFICIENT_CREDIT" in (response.text or "").upper():
+                self._set_thaibulksms_cached_otp_credit(0)
             return None, f"failed to send sms otp (thaibulksms): {response.text}"
 
         response_data = response.json()
