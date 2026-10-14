@@ -9,6 +9,7 @@
                 <field name="ref"/>
                 <field name="otp"/>
                 <field name="type"/>
+                <field name="sms_provider"/>
                 <field name="expiry"/>
             </list>
         </field>

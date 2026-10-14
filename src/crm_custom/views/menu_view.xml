@@ -43,4 +43,20 @@
         action="action_crm_otp_model"
         sequence="1"
     />
+
+    <menuitem
+        id="menu_crm_system_parameter"
+        name="System Parameters"
+        parent="menu_system_root"
+        action="action_crm_system_parameter"
+        sequence="2"
+    />
+
+    <menuitem
+        id="menu_crm_otp_sms_test"
+        name="SMS OTP Test"
+        parent="menu_system_root"
+        action="action_crm_otp_sms_test_wizard"
+        sequence="3"
+    />
 </odoo>

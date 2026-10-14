@@ -1,5 +1,7 @@
+import logging
 import secrets
 import string
+
 import requests
 import os
 
@@ -7,9 +9,16 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from ....util.phone import is_valid_th_msisdn, normalize_th_msisdn
+
+from .sms_otp_providers import GODYSMS_PROVIDER, THAIBULKSMS_PROVIDER
+
+_logger = logging.getLogger(__name__)
+
 
 class OTP(models.Model):
     _name = "crm.otp"
+    _inherit = ["crm.sms.otp.provider.mixin"]
     _description = "OTP"
     _order = "create_date desc"
     _REF_ALPHABET = string.ascii_letters + string.digits
@@ -22,7 +31,14 @@ class OTP(models.Model):
     expiry = fields.Datetime(string="Expiry", default=fields.Datetime.now)
     is_sent = fields.Boolean(string="Is Sent")
     reason = fields.Char(string="Reason")
-
+    sms_provider = fields.Selection(
+        selection=[
+            (GODYSMS_PROVIDER, "Gody SMS"),
+            (THAIBULKSMS_PROVIDER, "ThaiBulkSMS"),
+        ],
+        string="SMS Provider",
+        readonly=True,
+    )
     partner_id = fields.Many2one(
         "partner",
         string="Partner",
@@ -44,6 +60,13 @@ class OTP(models.Model):
         valid_types = dict(self._fields["type"].selection)
         if otp_type not in valid_types:
             raise ValidationError("Invalid OTP type.")
+
+        if otp_type == "phone":
+            recipient = normalize_th_msisdn(recipient)
+            if not is_valid_th_msisdn(recipient):
+                raise ValidationError(
+                    "Invalid Thai mobile phone number. Use 0XXXXXXXXX or 66XXXXXXXXX."
+                )
 
         otp = self.create({
             "recipient": recipient,
@@ -75,32 +98,9 @@ class OTP(models.Model):
 
     @api.model
     def has_sms_otp_credit(self):
-        base_url = os.getenv("SMS_API_ENDPOINT", False)
-        if not base_url:
-            return False
-
-        api_token = os.getenv("SMS_API_TOKEN", False)
-        if not api_token:
-            return False
-
-        url = f"{base_url}/openapi/sms/balance"
-
-        headers = {
-            "accept": "application/json",
-            "authorization": f"Bearer {api_token}"
-        }
-
-        response = requests.get(url, headers=headers)
-
-        if response.status_code != 200:
-            return False
-
-        remaining_credit = response.json().get("balance", 0)
-
-        if remaining_credit < 1:
-            return False
-
-        return True
+        return self._provider_has_credit(GODYSMS_PROVIDER) or self._provider_has_credit(
+            THAIBULKSMS_PROVIDER
+        )
 
     def make_as_fail(self, reason: str):
         return self.write({
@@ -155,83 +155,110 @@ class OTP(models.Model):
             "id": response.json().get("id", False),
         }
 
+    def _attempt_send_sms_provider(self, provider):
+        if provider == GODYSMS_PROVIDER:
+            if not self._godysms_configured():
+                return None, "godysms not configured."
+            return self._send_godysms_otp()
+        if provider == THAIBULKSMS_PROVIDER:
+            if not self._thaibulksms_otp_configured():
+                return None, "thaibulksms not configured."
+            return self._send_thaibulksms_otp()
+        return None, f"unknown sms provider: {provider}"
+
+    def _other_sms_provider(self, provider):
+        if provider == GODYSMS_PROVIDER:
+            return THAIBULKSMS_PROVIDER
+        if provider == THAIBULKSMS_PROVIDER:
+            return GODYSMS_PROVIDER
+        return None
+
+    def _is_out_of_credit_failure(self, reason):
+        text = (reason or "").lower()
+        return "insufficient" in text and "credit" in text
+
+    def send_sms_otp_via_provider(self, provider):
+        """Send SMS OTP using a single provider (admin test tool; no weighted fallback)."""
+        self.ensure_one()
+        if self.type != "phone":
+            raise ValidationError("SMS OTP can only be sent for phone type records.")
+
+        self.write({"sms_provider": provider})
+        result, detail = self._attempt_send_sms_provider(provider)
+        if not result:
+            self.make_as_fail(detail or "failed to send sms otp.")
+            return False
+
+        self.write({
+            "otp": result.get("transaction_id"),
+            "ref": result.get("ref"),
+        })
+        log_reason = f"[{provider}] {detail}"
+        self.make_as_send(log_reason)
+        _logger.info(
+            "crm.otp SMS OTP test sent via %s (id=%s recipient=%s)",
+            provider,
+            self.id,
+            self.recipient,
+        )
+        return result
+
     def send_sms_otp(self):
-        base_url = os.getenv("SMS_API_ENDPOINT", False)
-        if not base_url:
-            self.make_as_fail("SMS_API_ENDPOINT not configured.")
+        primary = self._pick_weighted_provider()
+        if not primary:
+            self.make_as_fail("No SMS OTP provider with available credit.")
             return False
 
-        api_token = os.getenv("SMS_API_TOKEN", False)
-        if not api_token:
-            self.make_as_fail("SMS_API_TOKEN not configured.")
-            return False
+        last_reason = False
+        tried = set()
 
-        sms_app_key = os.getenv("SMS_APP_KEY", False)
-        if not sms_app_key:
-            self.make_as_fail("SMS_APP_KEY not configured.")
-            return False
+        def try_provider(provider):
+            if not provider or provider in tried:
+                return None
+            tried.add(provider)
+            self.write({"sms_provider": provider})
+            return self._attempt_send_sms_provider(provider)
 
-        sms_app_secret = os.getenv("SMS_APP_SECRET", False)
-        if not sms_app_secret:
-            self.make_as_fail("SMS_APP_SECRET not configured.")
-            return False
+        for provider in (primary, self._other_sms_provider(primary)):
+            result, detail = try_provider(provider) or (None, None)
+            if detail is None and result is None:
+                continue
+            if result:
+                log_reason = f"[{provider}] {detail}"
+                self.make_as_send(log_reason)
+                _logger.info(
+                    "crm.otp SMS OTP sent via %s (id=%s recipient=%s)",
+                    provider,
+                    self.id,
+                    self.recipient,
+                )
+                return result
 
-        url = f"{base_url}/openapi/sms/app/otp"
+            last_reason = detail
+            if not self._is_out_of_credit_failure(detail):
+                break
 
-        headers = {
-            "accept": "application/json",
-            "authorization": f"Bearer {api_token}",
-            "secret": f"{sms_app_secret}",
-            "content-type": "application/json"
-        }
-
-        payload = {
-            "msisdn": self.recipient,
-            "appKey": sms_app_key
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-
-        if response.status_code not in (200, 201):
-            self.make_as_fail(f"failed to send sms otp: {response.text}")
-            return False
-
-        response_data = response.json()
-        self.make_as_send(response.text)
-        return {
-            "ref": response_data.get("ref", False),
-            "transaction_id": response_data.get("transactionId")
-            or response_data.get("transaction_id", False),
-        }
+        self.make_as_fail(last_reason or "failed to send sms otp.")
+        return False
 
     def verify_sms_otp(self, otp_code):
-        base_url = os.getenv("SMS_API_ENDPOINT", False)
-        if not base_url:
-            return False
+        provider = self.sms_provider or GODYSMS_PROVIDER
 
-        api_token = os.getenv("SMS_API_TOKEN", False)
-        if not api_token:
-            self.make_as_fail("SMS_API_TOKEN not configured.")
-            return False
+        if provider == THAIBULKSMS_PROVIDER:
+            if not self._thaibulksms_otp_configured():
+                self.make_as_fail("THAIBULKSMS_OTP_KEY/SECRET not configured.")
+                return False
+            verified = self._verify_thaibulksms_otp(otp_code)
+        else:
+            if not os.getenv("SMS_API_TOKEN", False):
+                self.make_as_fail("SMS_API_TOKEN not configured.")
+                return False
+            verified = self._verify_godysms_otp(otp_code)
 
-        url = f"{base_url}/openapi/verify/otp"
-
-        payload = {
-            "msisdn": self.recipient,
-            "otp": otp_code,
-            "transaction_id": self.otp,
-        }
-        headers = {
-            "accept": "application/json",
-            "authorization": f"Bearer {api_token}",
-            "content-type": "application/json"
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-
-        if response.status_code != 200:
-            return False
-
-        status = response.json().get("status", False)
-
-        return status
+        _logger.info(
+            "crm.otp SMS OTP verify via %s (id=%s verified=%s)",
+            provider,
+            self.id,
+            bool(verified),
+        )
+        return verified
