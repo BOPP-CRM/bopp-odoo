@@ -39,7 +39,6 @@ class OTP(models.Model):
         string="SMS Provider",
         readonly=True,
     )
-
     partner_id = fields.Many2one(
         "partner",
         string="Partner",
