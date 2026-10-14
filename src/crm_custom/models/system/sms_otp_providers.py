@@ -4,6 +4,8 @@ import os
 import requests
 from odoo import api, models
 
+from ....util.phone import is_valid_th_msisdn, normalize_th_msisdn
+
 _logger = logging.getLogger(__name__)
 
 GODYSMS_PROVIDER = "godysms"
@@ -42,6 +44,15 @@ def _parse_remaining_credit(payload):
 class SmsOtpProviderMixin(models.AbstractModel):
     _name = "crm.sms.otp.provider.mixin"
     _description = "SMS OTP provider helpers"
+
+    def _ensure_sms_msisdn(self):
+        self.ensure_one()
+        msisdn = normalize_th_msisdn(self.recipient)
+        if msisdn and msisdn != self.recipient:
+            self.recipient = msisdn
+        if not is_valid_th_msisdn(msisdn):
+            return None
+        return msisdn
 
     @api.model
     def _godysms_configured(self):
@@ -181,6 +192,10 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return weighted[-1][0]
 
     def _send_godysms_otp(self):
+        msisdn = self._ensure_sms_msisdn()
+        if not msisdn:
+            return None, "Invalid Thai mobile number (use 0XXXXXXXXX or 66XXXXXXXXX)."
+
         base_url = _env("SMS_API_ENDPOINT").rstrip("/")
         url = f"{base_url}/openapi/sms/app/otp"
         headers = {
@@ -190,7 +205,7 @@ class SmsOtpProviderMixin(models.AbstractModel):
             "content-type": "application/json",
         }
         payload = {
-            "msisdn": self.recipient,
+            "msisdn": msisdn,
             "appKey": _env("SMS_APP_KEY"),
         }
 
@@ -210,12 +225,16 @@ class SmsOtpProviderMixin(models.AbstractModel):
         }, response.text
 
     def _send_thaibulksms_otp(self):
+        msisdn = self._ensure_sms_msisdn()
+        if not msisdn:
+            return None, "Invalid Thai mobile number (use 0XXXXXXXXX or 66XXXXXXXXX)."
+
         base_url = _env("THAIBULKSMS_OTP_ENDPOINT", "https://otp.thaibulksms.com").rstrip("/")
         url = f"{base_url}/v2/otp/request"
         payload = {
             "key": _env("THAIBULKSMS_OTP_KEY"),
             "secret": _env("THAIBULKSMS_OTP_SECRET"),
-            "msisdn": self.recipient,
+            "msisdn": msisdn,
         }
 
         try:
@@ -254,10 +273,14 @@ class SmsOtpProviderMixin(models.AbstractModel):
         }, response.text
 
     def _verify_godysms_otp(self, otp_code):
+        msisdn = self._ensure_sms_msisdn()
+        if not msisdn:
+            return False
+
         base_url = _env("SMS_API_ENDPOINT").rstrip("/")
         url = f"{base_url}/openapi/verify/otp"
         payload = {
-            "msisdn": self.recipient,
+            "msisdn": msisdn,
             "otp": otp_code,
             "transaction_id": self.otp,
         }

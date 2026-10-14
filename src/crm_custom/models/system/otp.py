@@ -9,6 +9,8 @@ from datetime import timedelta
 from odoo import api, fields, models
 from odoo.exceptions import ValidationError
 
+from ....util.phone import is_valid_th_msisdn, normalize_th_msisdn
+
 from .sms_otp_providers import GODYSMS_PROVIDER, THAIBULKSMS_PROVIDER
 
 _logger = logging.getLogger(__name__)
@@ -59,6 +61,13 @@ class OTP(models.Model):
         valid_types = dict(self._fields["type"].selection)
         if otp_type not in valid_types:
             raise ValidationError("Invalid OTP type.")
+
+        if otp_type == "phone":
+            recipient = normalize_th_msisdn(recipient)
+            if not is_valid_th_msisdn(recipient):
+                raise ValidationError(
+                    "Invalid Thai mobile phone number. Use 0XXXXXXXXX or 66XXXXXXXXX."
+                )
 
         otp = self.create({
             "recipient": recipient,
