@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <record id="crm_system_parameter_sms_godysms_rate" model="crm.system.parameter">
+        <field name="key">sms.godysms_rate</field>
+        <field name="value">50</field>
+        <field name="description">Weighted random rate (0-100) for Gody SMS when sending phone OTP. ThaiBulkSMS uses the remainder (100 minus this value). Default is 50/50.</field>
+    </record>
+</odoo>

@@ -8,6 +8,7 @@
                 <sheet>
                     <group>
                         <field name="type"/>
+                        <field name="sms_provider" readonly="1"/>
                         <field name="key" readonly="1"/>
                         <field name="key_id" readonly="1"/>
                         <field name="otp" readonly="1"/>
