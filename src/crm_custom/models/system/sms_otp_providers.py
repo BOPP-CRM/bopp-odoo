@@ -100,6 +100,19 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return extras
 
     @api.model
+    def _format_thaibulksms_otp_send_error(self, response_text):
+        force = self._thaibulksms_otp_force() or "none"
+        message = f"failed to send sms otp (thaibulksms, force={force}): {response_text}"
+        if "INSUFFICIENT_CREDIT" not in (response_text or "").upper():
+            return message
+        return (
+            f"{message} "
+            "ThaiBulkSMS OTP API rejected the request for insufficient credit. "
+            "Standard SMS balance (api-v2) is separate; force=standard must be "
+            "enabled for your OTP key by ThaiBulkSMS support, or top up Corporate/OTP credit."
+        )
+
+    @api.model
     def _thaibulksms_sms_api_configured(self):
         return all([_env("THAIBULKSMS_API_KEY"), _env("THAIBULKSMS_API_SECRET")])
 
@@ -282,7 +295,13 @@ class SmsOtpProviderMixin(models.AbstractModel):
         if response.status_code not in (200, 201):
             if "INSUFFICIENT_CREDIT" in (response.text or "").upper():
                 self._set_thaibulksms_cached_otp_credit(0)
-            return None, f"failed to send sms otp (thaibulksms): {response.text}"
+            _logger.warning(
+                "crm.otp ThaiBulkSMS OTP request failed (status=%s force=%s body=%s)",
+                response.status_code,
+                payload.get("force"),
+                response.text,
+            )
+            return None, self._format_thaibulksms_otp_send_error(response.text)
 
         response_data = response.json()
         credit_remain = _parse_remaining_credit(response_data)
