@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_crm_system_parameter" model="ir.actions.act_window">
+        <field name="name">System Parameters</field>
+        <field name="res_model">crm.system.parameter</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

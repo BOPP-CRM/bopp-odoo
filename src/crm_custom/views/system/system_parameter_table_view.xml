@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_crm_system_parameter_list" model="ir.ui.view">
+        <field name="name">crm.system.parameter.list</field>
+        <field name="model">crm.system.parameter</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="key"/>
+                <field name="value"/>
+                <field name="description"/>
+            </list>
+        </field>
+    </record>
+</odoo>
