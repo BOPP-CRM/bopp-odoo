@@ -44,6 +44,6 @@
         <field name="name">SMS OTP Test</field>
         <field name="res_model">crm.otp.sms.test.wizard</field>
         <field name="view_mode">form</field>
-        <field name="target">new</field>
+        <field name="target">current</field>
     </record>
 </odoo>
