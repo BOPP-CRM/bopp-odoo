@@ -5,8 +5,22 @@
         <field name="model">crm.otp.sms.test.wizard</field>
         <field name="arch" type="xml">
             <form string="SMS OTP Test">
+                <header>
+                    <button
+                        name="action_send_test_sms"
+                        string="Send test SMS"
+                        type="object"
+                        class="oe_highlight"
+                    />
+                    <button
+                        name="action_verify_otp"
+                        string="Verify OTP"
+                        type="object"
+                        invisible="not otp_id or not send_success"
+                    />
+                </header>
                 <group string="Send test SMS">
-                    <field name="phone" placeholder="0646614513 or 66646614513"/>
+                    <field name="phone" placeholder="e.g. 0646614513"/>
                     <field name="partner_id"/>
                     <field name="sms_provider"/>
                 </group>
@@ -20,22 +34,6 @@
                     <field name="verify_success" widget="boolean_toggle" invisible="not verify_detail"/>
                     <field name="verify_detail" invisible="not verify_detail"/>
                 </group>
-                <footer>
-                    <button
-                        name="action_send_test_sms"
-                        string="Send test SMS"
-                        type="object"
-                        class="btn-primary"
-                    />
-                    <button
-                        name="action_verify_otp"
-                        string="Verify OTP"
-                        type="object"
-                        class="btn-secondary"
-                        invisible="not otp_id or not send_success"
-                    />
-                    <button string="Close" special="cancel"/>
-                </footer>
             </form>
         </field>
     </record>
