@@ -14,6 +14,15 @@ THAIBULKSMS_PROVIDER = "thaibulksms"
 THAIBULKSMS_OTP_CREDIT_CACHE_KEY = "crm.otp.thaibulksms_credit_remain"
 
 
+def _thaibulksms_otp_verify_ok(status):
+    if status is True:
+        return True
+    if isinstance(status, str):
+        normalized = status.strip().lower()
+        return normalized in ("success", "verified")
+    return False
+
+
 def _env(name, default=False):
     return os.getenv(name, default) or default
 
@@ -321,8 +330,10 @@ class SmsOtpProviderMixin(models.AbstractModel):
         ref = (
             response_data.get("ref")
             or response_data.get("ref_code")
+            or response_data.get("refno")
             or data.get("ref_code")
             or data.get("ref")
+            or data.get("refno")
         )
 
         if not token:
@@ -386,14 +397,12 @@ class SmsOtpProviderMixin(models.AbstractModel):
             return False
 
         body = response.json()
-        status = body.get("status")
-        if status is True or status == "verified":
+        if _thaibulksms_otp_verify_ok(body.get("status")):
             return True
 
         data = body.get("data")
         if isinstance(data, dict):
-            nested = data.get("status")
-            if nested is True or nested == "verified":
+            if _thaibulksms_otp_verify_ok(data.get("status")):
                 return True
             if data.get("verify") is True:
                 return True
