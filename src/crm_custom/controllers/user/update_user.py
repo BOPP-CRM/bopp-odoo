@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
 
 from ....util.line_auth import get_line_profile_from_request
@@ -65,9 +65,20 @@ class UpdateUserController(http.Controller):
 
         if "birth_date" in payload:
             birth_date = payload.get("birth_date")
-            if not birth_date:
-                update_vals["birth_date"] = False
-            else:
+            current_birth_date = (
+                fields.Date.to_string(user.birth_date) if user.birth_date else ""
+            )
+            incoming_birth_date = birth_date or ""
+
+            if incoming_birth_date != current_birth_date:
+                if current_birth_date:
+                    return json_response(
+                        {
+                            "error": "birth_date_locked",
+                            "message": "วันเกิดถูกบันทึกแล้ว ไม่สามารถแก้ไขได้ กรุณาติดต่อเจ้าหน้าที่",
+                        },
+                        status=400,
+                    )
                 try:
                     datetime.strptime(birth_date, "%Y-%m-%d")
                 except (TypeError, ValueError):
