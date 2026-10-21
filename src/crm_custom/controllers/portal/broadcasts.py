@@ -145,7 +145,7 @@ class PortalBroadcastsController(http.Controller):
 
         domain = [("partner_id", "=", partner.id)]
         source = (kwargs.get("source") or "").strip()
-        if source in ("manual", "birthday_auto"):
+        if source in ("manual", "birthday_auto", "rule_manual", "rule_auto"):
             domain.append(("source", "=", source))
 
         limit = self._parse_int(kwargs.get("limit")) or 20

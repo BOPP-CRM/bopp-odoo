@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_partner_coupon_distribution_rule_tree" model="ir.ui.view">
+        <field name="name">partner.coupon.distribution.rule.tree</field>
+        <field name="model">partner.coupon.distribution.rule</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="partner_id"/>
+                <field name="coupon_id"/>
+                <field name="seg_gender"/>
+                <field name="seg_tier_ids" widget="many2many_tags"/>
+                <field name="trigger"/>
+                <field name="granted_count"/>
+                <field name="last_run_at"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_partner_coupon_distribution_rule_form" model="ir.ui.view">
+        <field name="name">partner.coupon.distribution.rule.form</field>
+        <field name="model">partner.coupon.distribution.rule</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_preview" string="Preview" type="object"/>
+                    <button name="action_run" string="Run Now" type="object" class="btn-primary"
+                        confirm="แจกคูปองให้สมาชิกที่เข้าเงื่อนไขตอนนี้เลยหรือไม่?"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="partner_id"/>
+                            <field name="coupon_id"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="trigger"/>
+                            <field name="schedule_interval_days" invisible="trigger != 'scheduled'"/>
+                            <field name="last_run_at"/>
+                            <field name="granted_count"/>
+                            <field name="last_error"/>
+                        </group>
+                    </group>
+                    <group string="Conditions">
+                        <group>
+                            <field name="seg_gender"/>
+                            <field name="seg_tier_ids" widget="many2many_tags"
+                                domain="[('partner_id', '=', partner_id)]"/>
+                            <field name="seg_age_min"/>
+                            <field name="seg_age_max"/>
+                        </group>
+                        <group>
+                            <field name="seg_signup_from"/>
+                            <field name="seg_signup_to"/>
+                            <field name="seg_email_verified"/>
+                            <field name="seg_phone_verified"/>
+                        </group>
+                    </group>
+                    <group string="LINE Notification">
+                        <field name="notify_line"/>
+                        <field name="message_type" invisible="not notify_line"/>
+                        <field name="message_text" invisible="not notify_line"/>
+                        <field name="flex_payload" invisible="not notify_line or message_type != 'flex'"/>
+                    </group>
+                    <field name="broadcast_ids" readonly="1">
+                        <list>
+                            <field name="create_date"/>
+                            <field name="state"/>
+                            <field name="total_recipients"/>
+                            <field name="coupon_granted"/>
+                        </list>
+                    </field>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_partner_coupon_distribution_rule" model="ir.actions.act_window">
+        <field name="name">Coupon Distribution Rules</field>
+        <field name="res_model">partner.coupon.distribution.rule</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

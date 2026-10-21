@@ -33,3 +33,4 @@ from . import line_messaging
 from . import broadcast_recipient
 from . import broadcast
 from . import birthday_reward
+from . import coupon_distribution_rule

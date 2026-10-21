@@ -47,3 +47,4 @@ access_crm_otp_sms_test_wizard,access.crm.otp.sms.test.wizard,model_crm_otp_sms_
 access_partner_broadcast,access.partner.broadcast,model_partner_broadcast,,1,1,1,1
 access_partner_broadcast_recipient,access.partner.broadcast.recipient,model_partner_broadcast_recipient,,1,1,1,1
 access_partner_birthday_reward,access.partner.birthday.reward,model_partner_birthday_reward,,1,1,1,1
+access_partner_coupon_distribution_rule,access.partner.coupon.distribution.rule,model_partner_coupon_distribution_rule,,1,1,1,1

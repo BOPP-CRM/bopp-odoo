@@ -91,6 +91,13 @@ class UserCoupon(models.Model):
         ondelete="set null",
         index=True,
     )
+    distribution_rule_id = fields.Many2one(
+        "partner.coupon.distribution.rule",
+        string="Distribution Rule",
+        readonly=True,
+        ondelete="set null",
+        index=True,
+    )
     member_reward_event = fields.Selection(
         [
             ("join", "Join"),

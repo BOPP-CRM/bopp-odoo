@@ -53,6 +53,14 @@
     />
 
     <menuitem
+        id="menu_partner_coupon_distribution_rule"
+        name="Coupon Distribution Rules"
+        parent="menu_partner_root"
+        action="action_partner_coupon_distribution_rule"
+        sequence="7"
+    />
+
+    <menuitem
         id="menu_crm_otp_model"
         name="OTP"
         parent="menu_system_root"

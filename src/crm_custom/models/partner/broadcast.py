@@ -52,6 +52,8 @@ class PartnerBroadcast(models.Model):
         [
             ("manual", "Manual"),
             ("birthday_auto", "Birthday Reminder"),
+            ("rule_manual", "Coupon Rule (Manual)"),
+            ("rule_auto", "Coupon Rule (Scheduled)"),
         ],
         string="Source",
         default="manual",
@@ -63,6 +65,18 @@ class PartnerBroadcast(models.Model):
         string="Birthday Reward",
         ondelete="set null",
         index=True,
+    )
+
+    distribution_rule_id = fields.Many2one(
+        "partner.coupon.distribution.rule",
+        string="Distribution Rule",
+        ondelete="set null",
+        index=True,
+    )
+    send_line = fields.Boolean(
+        string="Send LINE Message",
+        default=True,
+        help="ปิดเพื่อแจกคูปองอย่างเดียวโดยไม่ส่งข้อความ LINE",
     )
 
     message_type = fields.Selection(
@@ -193,8 +207,9 @@ class PartnerBroadcast(models.Model):
 
     def _preflight(self, audience_count):
         self.ensure_one()
-        self.partner_id._ensure_line_messaging_ready()
-        self._validate_content()
+        if self.send_line:
+            self.partner_id._ensure_line_messaging_ready()
+            self._validate_content()
 
         if audience_count <= 0:
             raise ValidationError("ไม่พบสมาชิกที่ตรงกับเงื่อนไขกลุ่มเป้าหมาย")
@@ -234,12 +249,15 @@ class PartnerBroadcast(models.Model):
         return broadcast
 
     @api.model
-    def _create_broadcast_job(self, partner, users, content_vals, source="manual", birthday_reward_id=False):
+    def _create_broadcast_job(
+        self, partner, users, content_vals, source="manual", birthday_reward_id=False, distribution_rule_id=False
+    ):
         vals = dict(content_vals or {})
         vals.update({
             "partner_id": partner.id,
             "source": source,
             "birthday_reward_id": birthday_reward_id or False,
+            "distribution_rule_id": distribution_rule_id or False,
         })
         broadcast = self.create(vals)
         broadcast._launch(users)
@@ -327,8 +345,12 @@ class PartnerBroadcast(models.Model):
 
             if self.include_coupon and not self._grant_coupons(users, recipient_by_user):
                 return
-            if not self._send_line(users, recipient_by_user):
-                return
+            if self.send_line:
+                if not self._send_line(users, recipient_by_user):
+                    return
+            else:
+                for recipient in recipient_by_user.values():
+                    recipient.line_status = "skipped"
 
             self.write({
                 "pending_recipient_ids": [(3, user.id) for user in users],
@@ -372,6 +394,8 @@ class PartnerBroadcast(models.Model):
 
             if self.birthday_reward_id:
                 user_coupon.birthday_reward_id = self.birthday_reward_id.id
+            if self.distribution_rule_id:
+                user_coupon.distribution_rule_id = self.distribution_rule_id.id
             recipient.write({"coupon_status": "granted", "user_coupon_id": user_coupon.id})
             granted += 1
 
