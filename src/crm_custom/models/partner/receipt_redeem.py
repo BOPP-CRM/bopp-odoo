@@ -126,7 +126,8 @@ class PartnerReceiptRedeem(models.Model):
         tier = self._ensure_user_tier()
         if not tier or tier.convert_points <= 0:
             return 0
-        return tier.get_effective_convert_points(channel="receipt")
+        channel = "zortout" if self.zortout_order_id else "receipt"
+        return tier.get_effective_convert_points(channel=channel)
 
     def _calculate_reward_points(self, amount, convert_points):
         if amount <= 0 or convert_points <= 0:
