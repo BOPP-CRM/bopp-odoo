@@ -457,6 +457,7 @@ class PortalReceiptsController(http.Controller):
             } if reviewed_by else False,
             "tier_convert_points": receipt.tier_convert_points or 0,
             "reward_points": receipt.reward_points or 0,
+            "earn_channel": "zortout" if receipt.zortout_order_id else "receipt",
             "tier": {
                 "id": tier.id,
                 "code": tier.code,

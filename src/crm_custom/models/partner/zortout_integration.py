@@ -523,7 +523,7 @@ class PartnerZortoutIntegration(models.Model):
             return 0
         return math.floor(amount / convert_points)
 
-    def _get_user_convert_points(self, user):
+    def _get_user_convert_points(self, user, channel=None):
         self.ensure_one()
         user._update_tier()
         tier = user.tier_id
@@ -535,7 +535,7 @@ class PartnerZortoutIntegration(models.Model):
                 user.tier_id = tier
         if not tier or tier.convert_points <= 0:
             return 0
-        return tier.get_effective_convert_points(channel="zortout")
+        return tier.get_effective_convert_points(channel=channel)
 
     def _ensure_zortout_api_credentials(self):
         self.ensure_one()

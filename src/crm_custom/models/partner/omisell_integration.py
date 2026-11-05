@@ -1,4 +1,3 @@
-import math
 import os
 import secrets
 from datetime import datetime, timedelta
@@ -630,26 +629,6 @@ class PartnerOmisellIntegration(models.Model):
     def _get_default_point_currency(self):
         self.ensure_one()
         return self.currency_ids.filtered("is_default")[:1]
-
-    @staticmethod
-    def _calculate_reward_points(amount, convert_points):
-        if amount <= 0 or convert_points <= 0:
-            return 0
-        return math.floor(amount / convert_points)
-
-    def _get_user_convert_points(self, user):
-        self.ensure_one()
-        user._update_tier()
-        tier = user.tier_id
-        if not tier:
-            tier = self.env["partner.tier"].search([
-                ("partner_id", "=", self.id),
-            ], order="min_spending asc", limit=1)
-            if tier:
-                user.tier_id = tier
-        if not tier or tier.convert_points <= 0:
-            return 0
-        return tier.get_effective_convert_points(channel="omisell")
 
     def process_omisell_webhook(self, payload):
         self.ensure_one()

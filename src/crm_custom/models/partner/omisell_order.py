@@ -461,7 +461,7 @@ class PartnerOmisellOrder(models.Model):
                 "warning": "missing_currency",
             }
 
-        convert_points = partner._get_user_convert_points(user)
+        convert_points = partner._get_user_convert_points(user, channel="omisell")
         reward_value = partner._calculate_reward_points(self.amount, convert_points)
         if convert_points <= 0:
             tier_name = user.tier_id.name if user.tier_id else "-"
