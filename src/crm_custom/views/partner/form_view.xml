@@ -90,6 +90,20 @@
                         </page>
 
                         <page string="Content" name="content">
+                            <separator string="Registration Form Fields"/>
+                            <field name="registration_field_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="key"/>
+                                    <field name="label"/>
+                                    <field name="field_type"/>
+                                    <field name="is_system" readonly="1"/>
+                                    <field name="visible" widget="boolean_toggle"/>
+                                    <field name="required" widget="boolean_toggle"/>
+                                    <field name="active" widget="boolean_toggle"/>
+                                    <field name="options_json" optional="hide"/>
+                                </list>
+                            </field>
                             <separator string="Custom Fields"/>
                             <field name="ui_custom_field_ids" nolabel="1">
                                 <list editable="bottom">

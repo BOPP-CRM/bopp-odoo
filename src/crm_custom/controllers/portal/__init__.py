@@ -17,3 +17,4 @@ from . import omisell
 from . import lazada
 from . import broadcasts
 from . import coupon_distribution
+from . import registration_fields
