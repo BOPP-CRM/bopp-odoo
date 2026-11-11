@@ -48,6 +48,9 @@
                         <group string="Line Setting">
                             <field name="partner_line_liff_id"/>
                             <field name="partner_line_channel_access_token"/>
+                            <field name="line_messaging_enabled" widget="boolean_toggle"/>
+                            <field name="line_messaging_bot_basic_id" readonly="1"/>
+                            <field name="line_messaging_verified_at" readonly="1"/>
                         </group>
                     </group>
 
@@ -87,6 +90,20 @@
                         </page>
 
                         <page string="Content" name="content">
+                            <separator string="Registration Form Fields"/>
+                            <field name="registration_field_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="key"/>
+                                    <field name="label"/>
+                                    <field name="field_type"/>
+                                    <field name="is_system" readonly="1"/>
+                                    <field name="visible" widget="boolean_toggle"/>
+                                    <field name="required" widget="boolean_toggle"/>
+                                    <field name="active" widget="boolean_toggle"/>
+                                    <field name="options_json" optional="hide"/>
+                                </list>
+                            </field>
                             <separator string="Custom Fields"/>
                             <field name="ui_custom_field_ids" nolabel="1">
                                 <list editable="bottom">
@@ -204,6 +221,19 @@
                                             <field name="point_value" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
                                             <field name="point_currency_id" invisible="reward_type != 'point'" required="reward_type == 'point'"/>
                                             <field name="coupon_id" invisible="reward_type != 'coupon'" required="reward_type == 'coupon'"/>
+                                        </list>
+                                    </field>
+                                    <separator string="Birthday Rewards"/>
+                                    <p class="text-muted">คูปองวันเกิดแบบให้สมาชิกกดเก็บเอง (ควรตั้งคูปองเป็น Show In UI = ปิด)</p>
+                                    <field name="birthday_reward_ids" nolabel="1" context="{'default_partner_id': id}">
+                                        <list editable="bottom">
+                                            <field name="partner_id" column_invisible="1"/>
+                                            <field name="name"/>
+                                            <field name="coupon_id"/>
+                                            <field name="min_membership_days"/>
+                                            <field name="message_type"/>
+                                            <field name="message_text"/>
+                                            <field name="active" widget="boolean_toggle"/>
                                         </list>
                                     </field>
                                 </page>

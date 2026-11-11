@@ -313,4 +313,18 @@ class CouponController(http.Controller):
                 "value": coupon.point_id.value,
                 "type": coupon.point_id.type,
             } if coupon.point_id else False,
+            "source": self._coupon_source(coupon),
+            "source_name": coupon.distribution_rule_id.name or False,
         }
+
+    @staticmethod
+    def _coupon_source(coupon):
+        if coupon.distribution_rule_id:
+            return "distribution_rule"
+        if coupon.birthday_reward_id:
+            return "birthday"
+        if coupon.member_reward_id:
+            return "member_reward"
+        if coupon.point_id:
+            return "point"
+        return "admin"

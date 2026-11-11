@@ -268,6 +268,7 @@ class PortalUsersController(http.Controller):
             "birth_date": fields.Date.to_string(user.birth_date) if user.birth_date else False,
             "gender": user.gender,
             "address": user.address or False,
+            "custom_fields": user.get_custom_fields_dict(),
             "is_updated_user_info": user.is_updated_user_info,
             "tier": self._serialize_tier(user.tier_id),
             "points": self._serialize_balances(user),

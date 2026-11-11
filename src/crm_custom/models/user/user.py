@@ -1,3 +1,4 @@
+import json
 from html import escape
 
 from odoo import api, fields, models
@@ -35,6 +36,11 @@ class User(models.Model):
         ("O", "Other")
     ], string="Gender", tracking=True)
     address = fields.Text(string="Address", tracking=True)
+    custom_fields = fields.Text(
+        string="Custom Registration Fields",
+        help="JSON object of partner-defined registration field values keyed by field key.",
+        tracking=True,
+    )
     is_updated_user_info = fields.Boolean(
         string="Is Updated User Info",
         default=False,
@@ -121,6 +127,44 @@ class User(models.Model):
             else:
                 preview = ", ".join(coupon_codes[:5])
                 record.coupon_summary_display = f"{preview} (+{len(coupon_codes) - 5})"
+
+    def get_custom_fields_dict(self):
+        self.ensure_one()
+        if not self.custom_fields:
+            return {}
+        try:
+            data = json.loads(self.custom_fields)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            str(key): value
+            for key, value in data.items()
+            if value is not None and value is not False
+        }
+
+    def merge_custom_fields(self, updates):
+        """Merge custom field values without deleting keys omitted from updates."""
+        self.ensure_one()
+        if not isinstance(updates, dict):
+            raise ValidationError("custom_fields must be an object.")
+
+        current = self.get_custom_fields_dict()
+        for key, value in updates.items():
+            key = str(key).strip()
+            if not key:
+                continue
+            if value is None or value is False:
+                continue
+            if isinstance(value, str) and not value.strip():
+                # Empty string means clear only when explicitly updating a visible field.
+                current[key] = ""
+                continue
+            current[key] = value
+
+        self.custom_fields = json.dumps(current, ensure_ascii=False) if current else False
+        return current
 
     def _get_currency_balance(self, currency):
         self.ensure_one()

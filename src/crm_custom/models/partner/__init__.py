@@ -1,5 +1,6 @@
 from . import partner
 from . import custom_field
+from . import registration_field
 from . import currency
 from . import tier
 from . import member_reward
@@ -29,3 +30,8 @@ from . import omisell_sale_sync
 from . import omisell_webhook_log
 from . import lazada_integration
 from . import lazada_order_claim
+from . import line_messaging
+from . import broadcast_recipient
+from . import broadcast
+from . import birthday_reward
+from . import coupon_distribution_rule
