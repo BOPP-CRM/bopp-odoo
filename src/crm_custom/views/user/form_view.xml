@@ -44,6 +44,7 @@
                             <field name="birth_date"/>
                             <field name="gender"/>
                             <field name="address"/>
+                            <field name="custom_fields"/>
                             <field name="is_updated_user_info"/>
                         </group>
                     </group>

@@ -78,6 +78,11 @@ class Inventory(models.Model):
         string="Custom Field",
         tracking=True,
     )
+    registration_field_ids = fields.One2many(
+        "partner.registration.field",
+        "partner_id",
+        string="Registration Form Fields",
+    )
 
     user_ids = fields.One2many(
         "crm.user",

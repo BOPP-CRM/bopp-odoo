@@ -1,5 +1,6 @@
 from . import partner
 from . import custom_field
+from . import registration_field
 from . import currency
 from . import tier
 from . import member_reward

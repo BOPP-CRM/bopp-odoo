@@ -42,6 +42,9 @@ class PartnerConfigController(http.Controller):
             "ui": self._serialize_ui_config(partner),
             "ads": self._serialize_active_ads(partner),
             "tier": self._serialize_tier(partner),
+            "registration_form": request.env[
+                "partner.registration.field"
+            ].get_registration_form_for_partner(partner, include_hidden=True),
         }
         if partner.ui_warranty_enabled:
             config["warranty"] = self._serialize_warranty_config(partner)
