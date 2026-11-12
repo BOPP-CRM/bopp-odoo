@@ -54,6 +54,8 @@ Child spans also include the SQL statement text (placeholders, not bound values)
 
 While a span is current, Odoo log lines gain `trace_id=<32 hex>` and `span_id=<16 hex>`. Outside a span those fields are `-`. Loki can match `trace_id` to the same id in Tempo.
 
+HTTP responses for a recording or sampled server span also send that same 32-hex id in the `X-Trace-Id` response header. The header is left off when tracing is disabled, when the span context is invalid, and when the context is neither recording nor sampled. An `X-Trace-Id` already on the response is not replaced. The body is unchanged, and the `traceresponse` header is not added. API routes that set `Access-Control-Allow-Origin` (the `cors=` option on `/api` controllers) also list `X-Trace-Id` in `Access-Control-Expose-Headers`, merged with any names already there, so browser JavaScript on another origin can read it. A failure while writing the header is logged once and the response is still returned.
+
 ### Process model
 
 `otel_tracing` is a server-wide module (`server_wide_modules` includes it; the entrypoint adds it to a generated `odoo.conf` if a deployment's file omitted it). `post_load` runs in every process before workers are forked.
@@ -68,7 +70,7 @@ Cron jobs have no HTTP server span. Each job has its own `cron <name>` root span
 
 1. Ship this image. With `OTEL_ENABLED` unset, behavior matches the current image aside from the server-wide module import and one startup log line.
 2. The k8s manifests (BOPP-CRM/bopp-k8s) set the variables above on the Odoo deployment. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the Tempo OTLP receiver or an OpenTelemetry collector.
-3. Confirm in Grafana: open a trace for `GET /api/partner/<slug>/user` or `POST /api/integrations/zortout/<token>`. The route pattern is the span name (the token and slug are not attributes). Under the controller span, ORM and custom-method spans parent the SQL. LINE and SMS calls (`api.line.me`, `apiv2.godysms.com`, `api-v2.thaibulksms.com`) appear as client spans under the method that made them.
+3. Confirm in Grafana: copy the `X-Trace-Id` response header from the request and paste it into the Trace ID box in Grafana Explore (Tempo). That opens the server span for that request. The route pattern is the span name (`GET /api/partner/<slug>/user`, `POST /api/integrations/zortout/<token>`; the token and slug are not attributes). Under the controller span, ORM and custom-method spans parent the SQL. LINE and SMS calls (`api.line.me`, `apiv2.godysms.com`, `api-v2.thaibulksms.com`) appear as client spans under the method that made them. The same 32 hex digits are the `trace_id` on the Odoo log line for that request.
 
 ### Verify locally
 
@@ -92,9 +94,11 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:9 \
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
 OTEL_TRACES_SAMPLER=always_on \
 docker compose up --build -d
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8069/web/health
+curl -sD - -o /dev/null http://127.0.0.1:8069/web/health
 docker compose logs odoo | grep 'OpenTelemetry tracing'
 ```
+
+`X-Trace-Id` on that response is the value to paste into Grafana's Trace ID box. It is absent when `OTEL_ENABLED` is not `true`.
 
 With `workers` greater than 0, the parent log says tracing is deferred until after fork, and each worker log says tracing is enabled with that worker's pid.
 
