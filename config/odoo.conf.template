@@ -14,5 +14,7 @@ longpolling_port = 8072
 workers = 0
 
 addons_path = /mnt/extra-addons
+# Loaded at process start. Tracing stays off unless OTEL_ENABLED=true.
+server_wide_modules = base,web,otel_tracing
 data_dir = /var/lib/odoo
 log_level = debug
