@@ -232,6 +232,281 @@ class FlagTests(unittest.TestCase):
                     sys.modules[name] = module
 
 
+class _Flags:
+    def __init__(self, sampled):
+        self.sampled = sampled
+
+
+class _Context:
+    def __init__(self, trace_id, valid=True, sampled=True):
+        self.trace_id = trace_id
+        self.is_valid = valid
+        self.trace_flags = _Flags(sampled)
+
+
+class _Span:
+    def __init__(self, trace_id=0xAB, valid=True, sampled=True, recording=True, boom=False):
+        self.context = _Context(trace_id, valid=valid, sampled=sampled)
+        self.recording = recording
+        self.boom = boom
+        self.attributes = {}
+
+    def get_span_context(self):
+        if self.boom:
+            raise RuntimeError("span context exploded")
+        return self.context
+
+    def is_recording(self):
+        return self.recording
+
+    def set_attribute(self, key, value):
+        self.attributes[key] = value
+
+
+class _MutableHeaders:
+    """Stand-in for werkzeug's Headers: set/add/items, not a list."""
+
+    def __init__(self):
+        self._items = []
+
+    def set(self, key, value):
+        self._items = [(name, item) for name, item in self._items if name.lower() != key.lower()]
+        self._items.append((key, value))
+
+    def add(self, key, value):
+        self._items.append((key, value))
+
+    def get(self, key, default=None):
+        for name, item in self._items:
+            if name.lower() == key.lower():
+                return item
+        return default
+
+    def items(self):
+        return list(self._items)
+
+
+class TraceHeaderTests(unittest.TestCase):
+    def test_recording_and_sampled_contexts_set_a_32_hex_id(self):
+        from otel_tracing import bootstrap
+
+        recording = [("Content-Type", "text/plain")]
+        span = _Span(trace_id=0x2A, recording=True, sampled=True)
+        bootstrap._attach_trace_response_header(span, recording)
+        self.assertEqual(
+            _header_values(recording, "X-Trace-Id"),
+            ["0000000000000000000000000000002a"],
+        )
+
+        sampled_only = []
+        bootstrap._attach_trace_response_header(
+            _Span(trace_id=0x2A, recording=False, sampled=True),
+            sampled_only,
+        )
+        self.assertEqual(
+            _header_values(sampled_only, "X-Trace-Id"),
+            ["0000000000000000000000000000002a"],
+        )
+        self.assertEqual(_header_values(recording, "traceresponse"), [])
+
+    def test_invalid_or_unsampled_context_is_skipped(self):
+        from otel_tracing import bootstrap
+
+        for span in (
+            None,
+            _Span(valid=False, recording=True, sampled=True),
+            _Span(trace_id=0, valid=False, recording=False, sampled=False),
+            _Span(trace_id=0x2A, valid=True, recording=False, sampled=False),
+        ):
+            headers = [("Content-Type", "text/plain")]
+            bootstrap._attach_trace_response_header(span, headers)
+            self.assertEqual(_header_values(headers, "X-Trace-Id"), [], span)
+            self.assertEqual(headers, [("Content-Type", "text/plain")])
+
+    def test_existing_header_is_not_duplicated_or_replaced(self):
+        from otel_tracing import bootstrap
+
+        headers = [("x-trace-id", "already-set"), ("Content-Type", "application/json")]
+        body_owner = headers
+        bootstrap._attach_trace_response_header(_Span(), headers)
+        bootstrap._attach_trace_response_header(_Span(trace_id=0xFF), headers)
+        self.assertIs(headers, body_owner)
+        self.assertEqual(_header_values(headers, "X-Trace-Id"), ["already-set"])
+
+    def test_cors_expose_header_is_merged_and_only_when_origin_is_set(self):
+        from otel_tracing import bootstrap
+
+        headers = [
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Expose-Headers", "Content-Type, X-Custom"),
+            ("Content-Type", "application/json"),
+        ]
+        bootstrap._attach_trace_response_header(_Span(), headers)
+        expose = _header_values(headers, "Access-Control-Expose-Headers")
+        self.assertEqual(expose, ["Content-Type, X-Custom, X-Trace-Id"])
+        bootstrap._attach_trace_response_header(_Span(), headers)
+        self.assertEqual(_header_values(headers, "Access-Control-Expose-Headers"), expose)
+        self.assertEqual(len(_header_values(headers, "X-Trace-Id")), 1)
+
+        fresh = [("Access-Control-Allow-Origin", "https://app.example")]
+        bootstrap._attach_trace_response_header(_Span(), fresh)
+        self.assertEqual(_header_values(fresh, "Access-Control-Expose-Headers"), ["X-Trace-Id"])
+
+        plain = [("Content-Type", "text/plain")]
+        bootstrap._attach_trace_response_header(_Span(), plain)
+        self.assertEqual(_header_values(plain, "Access-Control-Expose-Headers"), [])
+
+        multi = _MutableHeaders()
+        multi.add("Access-Control-Allow-Origin", "*")
+        multi.add("Access-Control-Expose-Headers", "Content-Disposition")
+        multi.add("Access-Control-Expose-Headers", "X-Custom")
+        bootstrap._expose_trace_id(multi)
+        self.assertEqual(
+            multi.get("Access-Control-Expose-Headers"),
+            "Content-Disposition, X-Custom, X-Trace-Id",
+        )
+        self.assertEqual(
+            sum(
+                1
+                for key, _value in multi.items()
+                if key.lower() == "access-control-expose-headers"
+            ),
+            1,
+        )
+
+    def test_response_hook_sets_status_and_survives_a_bad_status(self):
+        from otel_tracing import bootstrap
+
+        span = _Span()
+        headers = []
+        bootstrap._wsgi_response_hook(span, {}, "404 NOT FOUND", headers)
+        self.assertEqual(span.attributes["http.response.status_code"], 404)
+        self.assertEqual(len(_header_values(headers, "X-Trace-Id")), 1)
+
+        broken = _Span()
+        broken_headers = [("Content-Type", "text/plain")]
+        bootstrap._wsgi_response_hook(broken, {}, "nope", broken_headers)
+        self.assertNotIn("http.response.status_code", broken.attributes)
+        self.assertEqual(len(_header_values(broken_headers, "X-Trace-Id")), 1)
+
+    def test_header_failure_is_logged_once_and_the_response_headers_stay(self):
+        import logging
+
+        from otel_tracing import bootstrap
+
+        bootstrap._warned_once.discard("trace-header")
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
+        logger = logging.getLogger("otel_tracing.bootstrap")
+        logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
+        self.addCleanup(logger.removeHandler, handler)
+        headers = [("Content-Type", "text/plain")]
+        span = _Span(boom=True)
+        bootstrap._wsgi_response_hook(span, {}, "500 Internal Server Error", headers)
+        bootstrap._wsgi_response_hook(span, {}, "500 Internal Server Error", headers)
+        self.assertEqual(headers, [("Content-Type", "text/plain")])
+        self.assertEqual(stream.getvalue().count("failed to add X-Trace-Id"), 1)
+        self.assertIn("WARNING", stream.getvalue())
+
+    def test_pre_dispatch_merges_expose_header_and_fails_open(self):
+        import logging
+        import types
+
+        from otel_tracing import bootstrap
+
+        http = types.ModuleType("odoo.http")
+
+        class Dispatcher:
+            def pre_dispatch(self, rule, args):
+                headers = self.request.future_response.headers
+                if getattr(rule, "cors", False):
+                    headers.set("Access-Control-Allow-Origin", "*")
+                    existing = getattr(rule, "expose", None)
+                    if existing:
+                        headers.set("Access-Control-Expose-Headers", existing)
+                if getattr(rule, "explode", False):
+                    raise RuntimeError("options abort")
+                return "dispatched"
+
+        http.Dispatcher = Dispatcher
+        previous = {
+            name: sys.modules.get(name) for name in ("odoo", "odoo.http")
+        }
+        odoo = types.ModuleType("odoo")
+        odoo.http = http
+        sys.modules["odoo"] = odoo
+        sys.modules["odoo.http"] = http
+        bootstrap._warned_once.discard("cors-expose")
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        logger = logging.getLogger("otel_tracing.bootstrap")
+        logger.addHandler(handler)
+        previous_level = logger.level
+        logger.setLevel(logging.WARNING)
+        try:
+            bootstrap._install_cors_expose()
+            bootstrap._install_cors_expose()
+            self.assertTrue(Dispatcher.pre_dispatch._bopp_otel)
+
+            headers = _MutableHeaders()
+            dispatcher = Dispatcher()
+            rule = types.SimpleNamespace(cors=True, expose="Content-Disposition")
+            dispatcher.request = types.SimpleNamespace(
+                future_response=types.SimpleNamespace(headers=headers)
+            )
+            self.assertEqual(dispatcher.pre_dispatch(rule, {}), "dispatched")
+            self.assertEqual(
+                headers.get("Access-Control-Expose-Headers"),
+                "Content-Disposition, X-Trace-Id",
+            )
+            self.assertEqual(headers.get("Access-Control-Allow-Origin"), "*")
+            dispatcher.pre_dispatch(rule, {})
+            self.assertEqual(headers.get("Access-Control-Expose-Headers").count("X-Trace-Id"), 1)
+
+            aborted = _MutableHeaders()
+            dispatcher.request = types.SimpleNamespace(
+                future_response=types.SimpleNamespace(headers=aborted)
+            )
+            with self.assertRaises(RuntimeError):
+                dispatcher.pre_dispatch(types.SimpleNamespace(cors=True, explode=True), {})
+            self.assertEqual(aborted.get("Access-Control-Expose-Headers"), "X-Trace-Id")
+
+            quiet = _MutableHeaders()
+            dispatcher.request = types.SimpleNamespace(
+                future_response=types.SimpleNamespace(headers=quiet)
+            )
+            self.assertEqual(dispatcher.pre_dispatch(types.SimpleNamespace(cors=False), {}), "dispatched")
+            self.assertIsNone(quiet.get("Access-Control-Expose-Headers"))
+
+            class BoomHeaders:
+                def set(self, key, value):
+                    return None
+
+                def items(self):
+                    raise RuntimeError("header store exploded")
+
+            dispatcher.request = types.SimpleNamespace(
+                future_response=types.SimpleNamespace(headers=BoomHeaders())
+            )
+            self.assertEqual(
+                dispatcher.pre_dispatch(types.SimpleNamespace(cors=True), {}),
+                "dispatched",
+            )
+            dispatcher.pre_dispatch(types.SimpleNamespace(cors=True), {})
+            self.assertEqual(stream.getvalue().count("failed to expose X-Trace-Id"), 1)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(previous_level)
+            for name, module in previous.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
+
+
 class ScenarioTests(unittest.TestCase):
     def test_disabled_is_a_noop(self):
         proc = run_scenario("disabled", _clean_env())
@@ -283,6 +558,17 @@ class ScenarioTests(unittest.TestCase):
         )
         proc = run_scenario("gevent", env)
         self.assertIn("gevent-ok", proc.stdout)
+
+    def test_trace_id_header_on_success_error_redirect_and_api(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_SERVICE_NAME="bopp-odoo",
+            OTEL_TRACES_SAMPLER="always_on",
+        )
+        proc = run_scenario("trace-header", env)
+        self.assertIn("trace-header-ok", proc.stdout)
 
     def test_sampler_arg_is_honored(self):
         env = _clean_env(
@@ -430,11 +716,16 @@ def _install_fake_odoo(workers, evented, app):
     return odoo
 
 
-def _call(app, path, method="GET", query=""):
+def _header_values(headers, name):
+    return [value for key, value in headers if str(key).lower() == name.lower()]
+
+
+def _invoke(app, path, method="GET", query=""):
     status = {}
 
     def start_response(code, headers, exc_info=None):
         status["code"] = code
+        status["headers"] = [(str(key), str(value)) for key, value in headers]
         return None
 
     environ = {
@@ -453,7 +744,12 @@ def _call(app, path, method="GET", query=""):
     close = getattr(body, "close", None)
     if close:
         close()
-    return status.get("code", ""), payload
+    return status.get("code", ""), payload, status.get("headers", [])
+
+
+def _call(app, path, method="GET", query=""):
+    code, payload, _headers = _invoke(app, path, method=method, query=query)
+    return code, payload
 
 
 def _memory_exporter():
@@ -487,14 +783,21 @@ def _span_blob(spans):
 class _App:
     session_store = "still-here"
 
-    def __init__(self, work=None):
+    def __init__(self, work=None, status="200 OK", body=b"ok", response_headers=None):
         self.work = work
+        self.status = status
+        self.body = body
+        self.response_headers = response_headers
 
     def __call__(self, environ, start_response):
         if self.work:
             self.work()
-        start_response("200 OK", [("Content-Type", "text/plain")])
-        return [b"ok"]
+        headers = [("Content-Type", "text/plain")]
+        if self.response_headers is not None:
+            headers = [tuple(item) for item in self.response_headers]
+        start_response(self.status, headers)
+        body = self.body if isinstance(self.body, bytes) else str(self.body).encode()
+        return [body]
 
 
 def scenario_disabled():
@@ -512,9 +815,11 @@ def scenario_disabled():
     setup()
     assert "opentelemetry.sdk.trace" not in sys.modules, sys.modules.keys()
     assert not getattr(type(app), "_bopp_otel_wrapped", False)
-    code, payload = _call(app, "/api/partner/acme/user")
+    code, payload, headers = _invoke(app, "/api/partner/acme/user")
     assert code.startswith("200"), code
     assert payload == b"ok"
+    assert _header_values(headers, "X-Trace-Id") == []
+    assert _header_values(headers, "traceresponse") == []
     assert app.session_store == "still-here"
     logging.getLogger("disabled-check").info("hello")
     assert "otel_trace_id" not in (handler.formatter._fmt or "")
@@ -905,8 +1210,11 @@ def scenario_sampler_off():
     _install_fake_odoo(workers=0, evented=False, app=app)
     exporter = _use_memory_exporter(bootstrap)
     bootstrap.setup()
-    code, _payload = _call(app, "/web/health")
+    code, payload, headers = _invoke(app, "/web/health")
     assert code.startswith("200"), code
+    assert payload == b"ok"
+    assert _header_values(headers, "X-Trace-Id") == [], headers
+    assert _header_values(headers, "traceresponse") == []
     from opentelemetry import trace
 
     trace.get_tracer_provider().force_flush()
@@ -1061,6 +1369,109 @@ def scenario_method_spans_off():
     print("method-spans-off-ok")
 
 
+def scenario_trace_header():
+    import logging
+
+    from opentelemetry import trace
+
+    from otel_tracing import bootstrap
+
+    app = _App()
+    _install_fake_odoo(workers=0, evented=False, app=app)
+    exporter = _use_memory_exporter(bootstrap)
+    bootstrap.setup()
+
+    def check(path, status, body, response_headers=None, expect_trace=True):
+        app.status = status
+        app.body = body
+        app.response_headers = response_headers
+        code, payload, headers = _invoke(app, path)
+        assert code == status, code
+        assert payload == body, payload
+        assert _header_values(headers, "traceresponse") == [], headers
+        trace.get_tracer_provider().force_flush()
+        server_spans = [
+            span
+            for span in exporter.get_finished_spans()
+            if span.kind == trace.SpanKind.SERVER
+        ]
+        assert server_spans, "expected a server span"
+        server = server_spans[-1]
+        status_code = int(status.split(" ", 1)[0])
+        assert dict(server.attributes).get("http.response.status_code") == status_code
+        values = _header_values(headers, "X-Trace-Id")
+        if expect_trace:
+            assert len(values) == 1, headers
+            assert values[0] == format(server.context.trace_id, "032x"), headers
+            assert len(values[0]) == 32 and all(char in "0123456789abcdef" for char in values[0])
+        return headers
+
+    check("/web/health", "200 OK", b"ok")
+    check("/missing", "404 NOT FOUND", b"missing page")
+    check("/boom", "500 Internal Server Error", b"err")
+    redirect = check(
+        "/old",
+        "302 FOUND",
+        b"",
+        response_headers=[("Location", "/web/login"), ("Content-Type", "text/html")],
+    )
+    assert _header_values(redirect, "Location") == ["/web/login"], redirect
+    check(
+        "/api/partner/acme/user",
+        "200 OK",
+        b'{"ok":true}',
+        response_headers=[("Content-Type", "application/json")],
+    )
+    duplicate = check(
+        "/api/duplicate",
+        "200 OK",
+        b"{}",
+        response_headers=[
+            ("Content-Type", "application/json"),
+            ("X-Trace-Id", "already-set"),
+        ],
+        expect_trace=False,
+    )
+    assert _header_values(duplicate, "X-Trace-Id") == ["already-set"], duplicate
+    cors = check(
+        "/api/portal/me",
+        "200 OK",
+        b'{"id":1}',
+        response_headers=[
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Expose-Headers", "Content-Type, X-Custom"),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    assert _header_values(cors, "Access-Control-Expose-Headers") == [
+        "Content-Type, X-Custom, X-Trace-Id"
+    ], cors
+    plain = check("/web/session/logout", "200 OK", b"bye")
+    assert _header_values(plain, "Access-Control-Expose-Headers") == []
+
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger = logging.getLogger("otel_tracing.bootstrap")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("header exploded")
+
+    bootstrap._attach_trace_response_header = _boom
+    bootstrap._warned_once.discard("trace-header")
+    app.status = "200 OK"
+    app.body = b"still-ok"
+    app.response_headers = None
+    code, payload, _headers = _invoke(app, "/web/health")
+    code_again, payload_again, _headers_again = _invoke(app, "/web/health")
+    assert code == "200 OK" and payload == b"still-ok", (code, payload)
+    assert code_again == "200 OK" and payload_again == b"still-ok"
+    assert stream.getvalue().count("failed to add X-Trace-Id") == 1, stream.getvalue()
+    print("trace-header-ok")
+
+
 def scenario_protocol():
     from otel_tracing.bootstrap import _build_exporter, _protocol
 
@@ -1086,6 +1497,7 @@ SCENARIOS = {
     "method-spans-off": scenario_method_spans_off,
     "gevent": scenario_gevent,
     "sampler-off": scenario_sampler_off,
+    "trace-header": scenario_trace_header,
     "protocol": scenario_protocol,
 }
 

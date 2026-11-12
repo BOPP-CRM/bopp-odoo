@@ -33,6 +33,11 @@ from .redact import finalize_exported_span, sanitize_url
 
 _logger = logging.getLogger(__name__)
 
+_TRACE_ID_HEADER = "X-Trace-Id"
+_EXPOSE_HEADER = "Access-Control-Expose-Headers"
+_ALLOW_ORIGIN_HEADER = "Access-Control-Allow-Origin"
+_warned_once = set()
+
 _TRACE_SUFFIX = " trace_id=%(otel_trace_id)s span_id=%(otel_span_id)s"
 _DEFAULT_EXPORT_TIMEOUT_MILLIS = 5000
 _DEFAULT_INIT_TIMEOUT_SEC = 3.0
@@ -59,6 +64,7 @@ def setup():
 
     _install_log_correlation()
     _install_wsgi()
+    _install_cors_expose()
     _install_client_instrumentation()
     try:
         from .spans import install_odoo_spans
@@ -583,14 +589,188 @@ def _wsgi_request_hook(span, environ):
         _logger.debug("OpenTelemetry WSGI request hook failed", exc_info=True)
 
 
-def _wsgi_response_hook(span, _environ, status, _response_headers):
+def _wsgi_response_hook(span, _environ, status, response_headers):
+    """Record the status code and add ``X-Trace-Id`` when this span has one.
+
+    The header is the server span's 32-hex trace id. It is added for a
+    valid context that is recording or sampled, including error and
+    redirect responses, because those still pass through ``start_response``.
+    An existing ``X-Trace-Id`` is left alone. ``traceresponse`` is not set.
+    A failure here is logged once and does not stop the response.
+    """
     try:
-        if span is None or not span.is_recording():
-            return
-        code_text = str(status).split(" ", 1)[0]
-        span.set_attribute("http.response.status_code", int(code_text))
+        if span is not None and span.is_recording():
+            code_text = str(status).split(" ", 1)[0]
+            span.set_attribute("http.response.status_code", int(code_text))
     except Exception:
         _logger.debug("OpenTelemetry WSGI response hook failed", exc_info=True)
+    try:
+        _attach_trace_response_header(span, response_headers)
+    except Exception:
+        _warn_once(
+            "trace-header",
+            "OpenTelemetry: failed to add X-Trace-Id response header",
+        )
+
+
+def _warn_once(key, message):
+    if key in _warned_once:
+        return
+    _warned_once.add(key)
+    _logger.warning("%s", message, exc_info=True)
+
+
+def _names_match(left, right):
+    return str(left).lower() == str(right).lower()
+
+
+def _header_pairs(headers):
+    if isinstance(headers, (list, tuple)):
+        pairs = headers
+    elif hasattr(headers, "items"):
+        pairs = headers.items()
+    else:
+        pairs = headers
+    for item in pairs:
+        if isinstance(item, (list, tuple)) and len(item) >= 2:
+            yield item[0], item[1]
+
+
+def _has_header(headers, name):
+    return any(_names_match(key, name) for key, _value in _header_pairs(headers))
+
+
+def _trace_id_listed(value):
+    if value is None:
+        return False
+    return any(
+        part.strip().lower() == _TRACE_ID_HEADER.lower()
+        for part in str(value).split(",")
+        if part.strip()
+    )
+
+
+def _add_header(headers, name, value):
+    if isinstance(headers, list):
+        headers.append((name, value))
+        return
+    if hasattr(headers, "add"):
+        headers.add(name, value)
+        return
+    headers.append((name, value))
+
+
+def _expose_trace_id(headers):
+    """Let browsers read ``X-Trace-Id`` on responses that already send CORS.
+
+    ``Access-Control-Allow-Origin`` is set by Odoo for routes that pass
+    ``cors=`` (the API controllers do). ``Access-Control-Expose-Headers``
+    is created or extended so the new name sits next to any names already
+    listed. Responses without an allow-origin header are left unchanged.
+    """
+    if headers is None or not _has_header(headers, _ALLOW_ORIGIN_HEADER):
+        return
+    expose_values = [
+        value
+        for key, value in _header_pairs(headers)
+        if _names_match(key, _EXPOSE_HEADER)
+    ]
+    if any(_trace_id_listed(value) for value in expose_values):
+        return
+    if not expose_values:
+        _add_header(headers, _EXPOSE_HEADER, _TRACE_ID_HEADER)
+        return
+    if not isinstance(headers, (list, tuple)) and hasattr(headers, "set"):
+        combined = ", ".join(
+            str(value).strip() for value in expose_values if str(value).strip()
+        )
+        merged = f"{combined}, {_TRACE_ID_HEADER}" if combined else _TRACE_ID_HEADER
+        headers.set(_EXPOSE_HEADER, merged)
+        return
+    current = expose_values[0]
+    merged = (
+        f"{str(current).rstrip()}, {_TRACE_ID_HEADER}"
+        if str(current).strip()
+        else _TRACE_ID_HEADER
+    )
+    for index, (key, _current) in enumerate(headers):
+        if _names_match(key, _EXPOSE_HEADER):
+            headers[index] = (key, merged)
+            return
+    _add_header(headers, _EXPOSE_HEADER, merged)
+
+
+def _server_trace_id(span):
+    """32-hex trace id, or None when this response should not advertise one."""
+    if span is None:
+        return None
+    context = span.get_span_context()
+    if context is None or not getattr(context, "is_valid", False):
+        return None
+    recording = False
+    is_recording = getattr(span, "is_recording", None)
+    if callable(is_recording):
+        recording = bool(is_recording())
+    sampled = bool(getattr(getattr(context, "trace_flags", None), "sampled", False))
+    if not recording and not sampled:
+        return None
+    trace_id = getattr(context, "trace_id", 0)
+    if not isinstance(trace_id, int) or trace_id <= 0:
+        return None
+    return format(trace_id, "032x")
+
+
+def _attach_trace_response_header(span, response_headers):
+    if response_headers is None:
+        return
+    trace_id = _server_trace_id(span)
+    if not trace_id:
+        return
+    if not _has_header(response_headers, _TRACE_ID_HEADER):
+        _add_header(response_headers, _TRACE_ID_HEADER, trace_id)
+    _expose_trace_id(response_headers)
+
+
+def _install_cors_expose():
+    """Merge ``X-Trace-Id`` into CORS expose headers as Odoo sets them.
+
+    Custom API routes pass ``cors=`` to ``@http.route``. Odoo writes
+    ``Access-Control-Allow-Origin`` from ``Dispatcher.pre_dispatch``,
+    including the OPTIONS preflight that aborts before the controller.
+    The wrapper runs after that write and still runs when preflight
+    raises. A missing dispatcher only skips this patch; the response
+    hook still exposes the header when the finished response has
+    allow-origin.
+    """
+    try:
+        import odoo.http as http
+    except Exception:
+        _warn_once(
+            "cors-import",
+            "OpenTelemetry: could not import odoo.http for CORS expose header",
+        )
+        return
+
+    dispatcher = getattr(http, "Dispatcher", None)
+    current = getattr(dispatcher, "pre_dispatch", None) if dispatcher is not None else None
+    if current is None or getattr(current, "_bopp_otel", False):
+        return
+    original = current
+
+    def pre_dispatch(self, rule, args):
+        try:
+            return original(self, rule, args)
+        finally:
+            try:
+                _expose_trace_id(self.request.future_response.headers)
+            except Exception:
+                _warn_once(
+                    "cors-expose",
+                    "OpenTelemetry: failed to expose X-Trace-Id on a CORS response",
+                )
+
+    pre_dispatch._bopp_otel = True
+    dispatcher.pre_dispatch = pre_dispatch
 
 
 def _client_request_hook(span, *args, **kwargs):
