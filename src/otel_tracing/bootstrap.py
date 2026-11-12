@@ -27,14 +27,12 @@ collector cannot fail or block a request.
 
 import logging
 import os
-import re
 import sys
 
-from .redact import sanitize_attributes, sanitize_url
+from .redact import finalize_exported_span, sanitize_url
 
 _logger = logging.getLogger(__name__)
 
-_PARTNER_SLUG = re.compile(r"^/api/partner/(?P<slug>[^/]+)(?P<rest>/.*)?$")
 _TRACE_SUFFIX = " trace_id=%(otel_trace_id)s span_id=%(otel_span_id)s"
 _DEFAULT_EXPORT_TIMEOUT_MILLIS = 5000
 _DEFAULT_INIT_TIMEOUT_SEC = 3.0
@@ -62,6 +60,15 @@ def setup():
     _install_log_correlation()
     _install_wsgi()
     _install_client_instrumentation()
+    try:
+        from .spans import install_odoo_spans
+
+        install_odoo_spans()
+    except Exception:
+        _logger.warning(
+            "OpenTelemetry: Odoo span hooks failed; continuing without them",
+            exc_info=True,
+        )
 
     if _will_fork():
         _install_worker_hook()
@@ -242,13 +249,15 @@ def _init_provider():
     provider = TracerProvider(resource=resource)
     exporter = _build_exporter()
     _active_exporter = exporter
-    provider.add_span_processor(_RedactingSpanProcessor())
-    provider.add_span_processor(
-        BatchSpanProcessor(
-            exporter,
-            export_timeout_millis=_export_timeout_millis(),
-        )
+    # Redaction mutates the span, then the duration filter decides whether
+    # the batch processor exports it. The batch processor is not registered
+    # on its own, so a dropped method span is not exported.
+    batch = BatchSpanProcessor(
+        exporter,
+        export_timeout_millis=_export_timeout_millis(),
     )
+    provider.add_span_processor(_RedactingSpanProcessor())
+    provider.add_span_processor(_MethodDurationFilter(batch, _method_min_duration_ns()))
     _force_set_tracer_provider(provider)
     _provider_pid = pid
     _logger.info(
@@ -379,6 +388,55 @@ class _GeventThreadpoolExporter:
             return False
 
 
+class _MethodDurationFilter:
+    """Forward spans to the batch processor, except short method spans.
+
+    Controller, server, client, SQL, and cron spans are always forwarded.
+    A minimum of 0 (the default) forwards everything.
+    """
+
+    def __init__(self, downstream, min_ns):
+        self._downstream = downstream
+        self._min_ns = min_ns
+
+    def on_start(self, span, parent_context=None):
+        start = getattr(self._downstream, "on_start", None)
+        if start is not None:
+            start(span, parent_context)
+
+    def _on_ending(self, span):
+        # The SDK calls this on every processor before on_end. The batch
+        # processor is wrapped, so it only sees the call if we forward it.
+        ending = getattr(self._downstream, "_on_ending", None)
+        if ending is not None:
+            ending(span)
+
+    def on_end(self, span):
+        try:
+            if self._min_ns > 0 and _is_short_method_span(span, self._min_ns):
+                return
+        except Exception:
+            _logger.debug("OpenTelemetry method-span filter failed", exc_info=True)
+        self._downstream.on_end(span)
+
+    def shutdown(self):
+        return self._downstream.shutdown()
+
+    def force_flush(self, timeout_millis=30000):
+        return self._downstream.force_flush(timeout_millis)
+
+
+def _is_short_method_span(span, min_ns):
+    attributes = getattr(span, "attributes", None) or {}
+    if attributes.get("bopp.span.group") != "method":
+        return False
+    start = getattr(span, "start_time", None)
+    end = getattr(span, "end_time", None)
+    if not isinstance(start, int) or not isinstance(end, int):
+        return False
+    return (end - start) < min_ns
+
+
 class _RedactingSpanProcessor:
     """Remove secrets from a span after instrumentors have filled it in.
 
@@ -406,16 +464,60 @@ class _RedactingSpanProcessor:
         return True
 
 
+def _is_server_span(span):
+    kind = getattr(span, "kind", None)
+    if getattr(kind, "name", None) == "SERVER":
+        return True
+    return getattr(kind, "value", None) == 1
+
+
+def _method_min_duration_ns():
+    try:
+        from .spans import method_min_duration_ns
+
+        return method_min_duration_ns()
+    except Exception:
+        return 0
+
+
 def _redact_ended_span(span):
+    is_server = _is_server_span(span)
     attributes = getattr(span, "_attributes", None)
     store = getattr(attributes, "_dict", None)
+    current = dict(store) if isinstance(store, dict) else {}
+    name, cleaned = finalize_exported_span(getattr(span, "_name", None), current, is_server)
     if isinstance(store, dict):
-        cleaned = sanitize_attributes(store)
         store.clear()
         store.update(cleaned)
-    name = getattr(span, "_name", None)
-    if isinstance(name, str) and ("?" in name or "@" in name):
-        span._name = sanitize_url(name)
+    if isinstance(name, str):
+        span._name = name
+    _redact_events(span, is_server, cleaned.get("http.route") if is_server else None)
+
+
+def _redact_events(span, is_server, route):
+    events = getattr(span, "_events", None)
+    if not events:
+        return
+    from .redact import replace_url_path, sanitize_attributes
+
+    for event in events:
+        attrs = getattr(event, "attributes", None)
+        event_store = getattr(attrs, "_dict", None)
+        if not isinstance(event_store, dict):
+            continue
+        cleaned = sanitize_attributes(event_store)
+        cleaned.pop("bopp.partner.slug", None)
+        if is_server and isinstance(route, str) and route.startswith("/"):
+            for key in list(cleaned):
+                if key in ("http.target", "url.path") or key == "http.url" or key == "url.full":
+                    value = cleaned[key]
+                    if key in ("http.target", "url.path") and isinstance(value, str):
+                        cleaned[key] = route
+                    elif isinstance(value, str):
+                        cleaned[key] = replace_url_path(value, route)
+            cleaned.pop("url.query", None)
+        event_store.clear()
+        event_store.update(cleaned)
 
 
 def _install_wsgi():
@@ -465,17 +567,18 @@ def _wsgi_request_hook(span, environ):
     try:
         if span is None or not span.is_recording():
             return
-        path = environ.get("PATH_INFO") or "/"
+        from .spans import preliminary_route
+
+        path = (environ.get("PATH_INFO") or "/").split("?", 1)[0]
         method = environ.get("REQUEST_METHOD") or "HTTP"
-        route = path
-        match = _PARTNER_SLUG.match(path)
-        if match:
-            slug = match.group("slug")
-            rest = match.group("rest") or ""
-            route = "/api/partner/{slug}" + rest
-            span.set_attribute("bopp.partner.slug", slug)
-            span.update_name(f"{method} {route}")
-        span.set_attribute("http.route", route)
+        route = preliminary_route(path)
+        # Query strings never belong in the server span name. The dispatch
+        # hook replaces this with the matched route pattern when Odoo has one.
+        span.update_name(f"{method} {route or path}")
+        if route:
+            span.set_attribute("http.route", route)
+            span.set_attribute("http.target", route)
+            span.set_attribute("url.path", route)
     except Exception:
         _logger.debug("OpenTelemetry WSGI request hook failed", exc_info=True)
 
@@ -490,25 +593,71 @@ def _wsgi_response_hook(span, _environ, status, _response_headers):
         _logger.debug("OpenTelemetry WSGI response hook failed", exc_info=True)
 
 
+def _client_request_hook(span, *args, **kwargs):
+    """Redact the outbound URL as soon as the client span starts.
+
+    ``on_end`` redaction is the backstop. This hook covers instrumentors
+    that copy the URL into the span name before the request returns.
+    Headers and bodies are not recorded.
+    """
+    try:
+        if span is None or not getattr(span, "is_recording", lambda: False)():
+            return
+        url = None
+        for arg in args:
+            candidate = getattr(arg, "url", None)
+            if candidate is None and isinstance(arg, str) and "://" in arg:
+                candidate = arg
+            if candidate:
+                url = candidate
+                break
+        if isinstance(url, bytes):
+            url = url.decode("latin1", "replace")
+        if isinstance(url, str):
+            cleaned = sanitize_url(url)
+            span.set_attribute("http.url", cleaned)
+            span.set_attribute("url.full", cleaned)
+    except Exception:
+        _logger.debug("OpenTelemetry client request hook failed", exc_info=True)
+
+
 def _install_client_instrumentation():
     _instrument(
         "psycopg2",
         "opentelemetry.instrumentation.psycopg2",
         "Psycopg2Instrumentor",
-        # SQL text is kept (placeholders). Parameter values are not.
+        # SQL text is kept (placeholders). Bound parameter values are not.
         capture_parameters=False,
         enable_commenter=False,
     )
+    client_hook = {"request_hook": _client_request_hook}
     _instrument(
         "requests",
         "opentelemetry.instrumentation.requests",
         "RequestsInstrumentor",
+        **client_hook,
     )
     _instrument(
         "urllib3",
         "opentelemetry.instrumentation.urllib3",
         "URLLib3Instrumentor",
+        **client_hook,
     )
+    # httpx is not imported by this image today. Instrument it only when
+    # the library is actually installed so startup does not log a failure.
+    try:
+        import importlib.util
+
+        httpx_installed = importlib.util.find_spec("httpx") is not None
+    except Exception:
+        httpx_installed = False
+    if httpx_installed:
+        _instrument(
+            "httpx",
+            "opentelemetry.instrumentation.httpx",
+            "HTTPXClientInstrumentor",
+            **client_hook,
+        )
 
 
 def _instrument(label, module_name, class_name, **kwargs):
@@ -516,8 +665,14 @@ def _instrument(label, module_name, class_name, **kwargs):
         module = __import__(module_name, fromlist=[class_name])
         instrumentor_cls = getattr(module, class_name)
         instrumentor = instrumentor_cls()
-        if not instrumentor.is_instrumented_by_opentelemetry:
+        if instrumentor.is_instrumented_by_opentelemetry:
+            return
+        try:
             instrumentor.instrument(**kwargs)
+        except TypeError:
+            # Older instrumentors reject request_hook. Retry without extras
+            # rather than leaving the library uninstrumented.
+            instrumentor.instrument()
     except Exception:
         _logger.exception("OpenTelemetry: %s instrumentation failed", label)
 

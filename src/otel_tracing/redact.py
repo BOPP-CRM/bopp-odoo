@@ -146,3 +146,110 @@ def sanitize_attributes(attributes):
             continue
         cleaned[key] = new_value
     return cleaned
+
+
+_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
+
+# Path and URL keys a server span must show as the route pattern, not the
+# raw request target. Query strings are dropped from these on server spans.
+_SERVER_PATH_ATTRS = {"http.target", "url.path"}
+_SERVER_URL_ATTRS = {"http.url", "url.full"}
+
+
+def strip_query(value):
+    """Drop the query string and fragment from a URL or request target."""
+    if not isinstance(value, str) or "?" not in value and "#" not in value:
+        return value
+    return value.split("?", 1)[0].split("#", 1)[0]
+
+
+def replace_url_path(value, path):
+    """Replace the path of a URL with ``path`` and drop the query string."""
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return path
+    if not parsed.scheme and not parsed.netloc:
+        return path
+    netloc = parsed.netloc
+    if "@" in netloc:
+        _, _, host = netloc.rpartition("@")
+        netloc = "REDACTED:REDACTED@" + host
+    return urlunsplit((parsed.scheme, netloc, path, "", ""))
+
+
+def _http_method(name, attributes):
+    for key in ("http.request.method", "http.method"):
+        value = attributes.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().upper()
+    if isinstance(name, str) and " " in name:
+        first = name.split(" ", 1)[0].strip().upper()
+        if first in _HTTP_METHODS:
+            return first
+    return "HTTP"
+
+
+def sanitize_span_name(name):
+    """Remove query strings and URL userinfo from a span name."""
+    if not isinstance(name, str):
+        return name
+    name = strip_query(name).rstrip()
+    if "://" not in name and "@" not in name:
+        return name
+    parts = []
+    for part in name.split(" "):
+        if "://" in part or "@" in part:
+            parts.append(sanitize_url(strip_query(part)))
+        else:
+            parts.append(part)
+    return " ".join(parts)
+
+
+def _rewrite_server_value(key, value, route):
+    if key in _SERVER_PATH_ATTRS or key.endswith("url.path") or key == "http.target":
+        return route
+    if key in _SERVER_URL_ATTRS or key == "http.url" or key.endswith("url.full"):
+        if isinstance(value, str):
+            return replace_url_path(value, route)
+        if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+            rewritten = [replace_url_path(item, route) for item in value]
+            return type(value)(rewritten)
+    return value
+
+
+def finalize_exported_span(name, attributes, is_server):
+    """Apply route-pattern and query redaction to a span about to be exported.
+
+    Server spans are renamed to ``METHOD <route pattern>`` and their URL
+    attributes use that pattern with the query string removed. Client spans
+    keep non-sensitive query parameters and lose sensitive ones via
+    ``sanitize_attributes``. ``bopp.partner.slug`` is never exported: the
+    slug is a path parameter and belongs only inside ``<slug>``.
+    """
+    cleaned = sanitize_attributes(attributes)
+    cleaned.pop("bopp.partner.slug", None)
+    if not is_server:
+        return sanitize_span_name(name), cleaned
+
+    route = cleaned.get("http.route")
+    if isinstance(route, str) and route.startswith("/"):
+        route = strip_query(route)
+        cleaned["http.route"] = route
+        name = f"{_http_method(name, cleaned)} {route}"
+        for key in list(cleaned):
+            cleaned[key] = _rewrite_server_value(key, cleaned[key], route)
+        cleaned.pop("url.query", None)
+        cleaned.pop("http.query", None)
+        return name, cleaned
+
+    name = sanitize_span_name(name)
+    for key in ("http.target", "http.url", "url.full", "url.path"):
+        value = cleaned.get(key)
+        if isinstance(value, str):
+            cleaned[key] = strip_query(sanitize_url(value))
+    cleaned.pop("url.query", None)
+    cleaned.pop("http.query", None)
+    return name, cleaned
