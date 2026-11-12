@@ -86,6 +86,52 @@ class RedactTests(unittest.TestCase):
         self.assertNotIn("db.statement.parameters", cleaned)
         self.assertNotIn("http.request.body", cleaned)
 
+    def test_server_span_uses_route_pattern_and_drops_query(self):
+        from otel_tracing.redact import finalize_exported_span
+        from otel_tracing.spans import match_route, normalize_route, preliminary_route
+
+        self.assertEqual(
+            normalize_route("/api/integrations/zortout/<string:token>"),
+            "/api/integrations/zortout/<token>",
+        )
+        self.assertEqual(
+            match_route(
+                ["/api/partner/<string:slug>", "/api/partner/<string:slug>/user"],
+                "/api/partner/acme/user",
+            ),
+            "/api/partner/<slug>/user",
+        )
+        self.assertEqual(preliminary_route("/api/partner/acme/user"), "/api/partner/<slug>/user")
+
+        name, attrs = finalize_exported_span(
+            "POST /api/integrations/zortout/raw-token-value?access_token=query-secret&page=2",
+            {
+                "http.method": "POST",
+                "http.route": "/api/integrations/zortout/<token>",
+                "http.target": "/api/integrations/zortout/raw-token-value?access_token=query-secret",
+                "url.path": "/api/integrations/zortout/raw-token-value",
+                "http.url": "http://odoo.local/api/integrations/zortout/raw-token-value?access_token=query-secret",
+                "url.query": "access_token=query-secret&page=2",
+                "bopp.partner.slug": "raw-slug-value",
+                "http.request.header.authorization": "Bearer secret",
+            },
+            True,
+        )
+        blob = json.dumps({"name": name, "attrs": attrs})
+        self.assertEqual(name, "POST /api/integrations/zortout/<token>")
+        self.assertEqual(attrs["http.target"], "/api/integrations/zortout/<token>")
+        self.assertEqual(attrs["url.path"], "/api/integrations/zortout/<token>")
+        self.assertEqual(
+            attrs["http.url"],
+            "http://odoo.local/api/integrations/zortout/<token>",
+        )
+        self.assertNotIn("raw-token-value", blob)
+        self.assertNotIn("query-secret", blob)
+        self.assertNotIn("raw-slug-value", blob)
+        self.assertNotIn("url.query", attrs)
+        self.assertNotIn("bopp.partner.slug", attrs)
+        self.assertNotIn("authorization", blob.lower())
+
     def test_aws_and_app_key_query_params(self):
         from otel_tracing.redact import sanitize_url
 
@@ -280,6 +326,71 @@ class ScenarioTests(unittest.TestCase):
         proc = run_scenario("init-error", env, timeout=15)
         self.assertIn("init-error-ok", proc.stdout)
 
+    def test_method_spans_nest_under_the_parent_and_fail_open(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_TRACES_SAMPLER="always_on",
+            OTEL_ODOO_METHOD_SPANS="true",
+        )
+        proc = run_scenario("method-spans", env, timeout=20)
+        self.assertIn("method-spans-ok", proc.stdout)
+
+    def test_method_spans_can_be_disabled(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_TRACES_SAMPLER="always_on",
+            OTEL_ODOO_METHOD_SPANS="false",
+        )
+        proc = run_scenario("method-spans-off", env, timeout=20)
+        self.assertIn("method-spans-off-ok", proc.stdout)
+
+    def test_short_method_spans_are_not_exported(self):
+        from types import SimpleNamespace
+
+        from otel_tracing.bootstrap import _MethodDurationFilter
+
+        class Sink:
+            def __init__(self):
+                self.spans = []
+
+            def on_end(self, span):
+                self.spans.append(span)
+
+            def on_start(self, span, parent_context=None):
+                return None
+
+            def shutdown(self):
+                return None
+
+            def force_flush(self, timeout_millis=30000):
+                return True
+
+        sink = Sink()
+        filt = _MethodDurationFilter(sink, min_ns=5_000_000)
+        short = SimpleNamespace(
+            start_time=0,
+            end_time=1_000_000,
+            attributes={"bopp.span.group": "method"},
+        )
+        kept = SimpleNamespace(
+            start_time=0,
+            end_time=1_000_000,
+            attributes={"bopp.span.group": "controller"},
+        )
+        slow = SimpleNamespace(
+            start_time=0,
+            end_time=6_000_000,
+            attributes={"bopp.span.group": "method"},
+        )
+        filt.on_end(short)
+        filt.on_end(kept)
+        filt.on_end(slow)
+        self.assertEqual(sink.spans, [kept, slow])
+
     def test_grpc_exporter_is_selected_from_the_protocol(self):
         env = _clean_env(
             OTEL_ENABLED="true",
@@ -319,7 +430,7 @@ def _install_fake_odoo(workers, evented, app):
     return odoo
 
 
-def _call(app, path, method="GET"):
+def _call(app, path, method="GET", query=""):
     status = {}
 
     def start_response(code, headers, exc_info=None):
@@ -329,7 +440,7 @@ def _call(app, path, method="GET"):
     environ = {
         "REQUEST_METHOD": method,
         "PATH_INFO": path,
-        "QUERY_STRING": "",
+        "QUERY_STRING": query,
         "SERVER_NAME": "localhost",
         "SERVER_PORT": "8069",
         "SERVER_PROTOCOL": "HTTP/1.1",
@@ -480,7 +591,11 @@ def scenario_enabled():
     exporter = _use_memory_exporter(bootstrap)
     bootstrap.setup()
     assert app.session_store == "still-here"
-    code, _payload = _call(app, "/api/partner/acme/user")
+    code, _payload = _call(
+        app,
+        "/api/partner/acme/user",
+        query="access_token=server-query-secret&page=3",
+    )
     assert code.startswith("200"), code
     from opentelemetry import trace
 
@@ -501,9 +616,12 @@ def scenario_enabled():
     server_spans = [span for span in spans if span.kind == trace.SpanKind.SERVER]
     assert len(server_spans) == 1, [(span.name, span.kind) for span in spans]
     server_span = server_spans[0]
-    assert server_span.name == "GET /api/partner/{slug}/user", server_span.name
-    assert dict(server_span.attributes).get("bopp.partner.slug") == "acme"
-    assert dict(server_span.attributes).get("http.route") == "/api/partner/{slug}/user"
+    assert server_span.name == "GET /api/partner/<slug>/user", server_span.name
+    assert "bopp.partner.slug" not in dict(server_span.attributes)
+    assert dict(server_span.attributes).get("http.route") == "/api/partner/<slug>/user"
+    assert dict(server_span.attributes).get("http.target") == "/api/partner/<slug>/user"
+    assert "acme" not in blob, blob
+    assert "server-query-secret" not in blob, blob
     assert dict(server_span.attributes).get("http.response.status_code") == 200
     trace_id = server_span.context.trace_id
     for span in spans:
@@ -598,11 +716,14 @@ def scenario_fork():
             spans = list(exporter.get_finished_spans())
             server_spans = [span for span in spans if span.kind == trace.SpanKind.SERVER]
             assert len(server_spans) == 1, [span.name for span in spans]
+            blob = _span_blob(spans)
             payload = {
                 "pid": os.getpid(),
                 "name": server_spans[0].name,
-                "slug": dict(server_spans[0].attributes).get("bopp.partner.slug"),
+                "route": dict(server_spans[0].attributes).get("http.route"),
+                "target": dict(server_spans[0].attributes).get("http.target"),
                 "count": len(spans),
+                "blob": blob,
             }
             os.write(write_fd, json.dumps(payload).encode())
             os.close(write_fd)
@@ -629,8 +750,10 @@ def scenario_fork():
     assert exporter.get_finished_spans() == ()
     payload = json.loads(raw)
     assert payload["pid"] != os.getpid()
-    assert payload["name"] == "GET /api/partner/{slug}/user"
-    assert payload["slug"] == "acme"
+    assert payload["name"] == "GET /api/partner/<slug>/user"
+    assert payload["route"] == "/api/partner/<slug>/user"
+    assert payload["target"] == "/api/partner/<slug>/user"
+    assert "acme" not in payload["blob"]
     assert payload["count"] >= 1
     print("fork-ok")
 
@@ -791,6 +914,153 @@ def scenario_sampler_off():
     print("sampler-off-ok")
 
 
+def scenario_method_spans():
+    from opentelemetry import trace
+
+    from otel_tracing import bootstrap, spans
+
+    class Partner:
+        _name = "res.partner"
+
+        def __len__(self):
+            return 4
+
+        def write(self, vals):
+            return True
+
+        def search(self, domain, limit=None):
+            return ["a", "b"]
+
+    Partner.write._api = "model"
+
+    class Controller:
+        def receive_webhook(self, token, **kwargs):
+            self.token = token
+            Partner().search([])
+            return "ok"
+
+    controller = Controller()
+
+    def endpoint(**kwargs):
+        return controller.receive_webhook(**kwargs)
+
+    endpoint.__self__ = controller
+    endpoint.__name__ = "receive_webhook"
+    endpoint.routing = {"routes": ["/api/integrations/zortout/<string:token>"]}
+
+    class _HttpRequest:
+        path = "/api/integrations/zortout/raw-token-value"
+
+    class Request:
+        def __init__(self):
+            self.httprequest = _HttpRequest()
+
+    class HttpDispatcher:
+        def __init__(self, request):
+            self.request = request
+
+        def dispatch(self, endpoint, args):
+            return endpoint(**(args or {}))
+
+    class Cron:
+        def _callback(self, cron_name, server_action_id):
+            self.called = (cron_name, server_action_id)
+            return "ran"
+
+    spans.patch_base_methods(Partner)
+    assert Partner.write._api == "model"
+    spans.wrap_cron(Cron)
+
+    def work():
+        dispatcher = HttpDispatcher(Request())
+        result = dispatcher.dispatch(endpoint, {"token": "raw-token-value"})
+        assert result == "ok", result
+        assert Partner().write({"name": "x"}) is True
+
+    app = _App(work=work)
+    _install_fake_odoo(workers=0, evented=False, app=app)
+    import odoo.http as http
+
+    http.Request = Request
+    http.HttpDispatcher = HttpDispatcher
+    exporter = _use_memory_exporter(bootstrap)
+    bootstrap.setup()
+    code, _payload = _call(app, "/api/integrations/zortout/raw-token-value")
+    assert code.startswith("200"), code
+    assert controller.token == "raw-token-value"
+
+    cron = Cron()
+    tracer = trace.get_tracer("test")
+    with tracer.start_as_current_span("manual"):
+        assert cron._callback("Nightly sync", 7) == "ran"
+    assert cron.called == ("Nightly sync", 7)
+
+    original_tracer = spans._tracer
+
+    def _boom():
+        raise RuntimeError("tracer exploded")
+
+    spans._tracer = _boom
+    with tracer.start_as_current_span("broken-tracer"):
+        assert Partner().write({"name": "y"}) is True
+    spans._tracer = original_tracer
+
+    trace.get_tracer_provider().force_flush()
+    finished = list(exporter.get_finished_spans())
+    blob = _span_blob(finished)
+    names = [span.name for span in finished]
+    assert "res.partner.search" in names, names
+    assert "res.partner.write" in names, names
+    assert "controller Controller.receive_webhook" in names, names
+    assert "cron Nightly sync" in names, names
+    assert "raw-token-value" not in blob, blob
+    server_spans = [span for span in finished if span.kind == trace.SpanKind.SERVER]
+    assert len(server_spans) == 1, names
+    assert server_spans[0].name == "GET /api/integrations/zortout/<token>", server_spans[0].name
+    assert dict(server_spans[0].attributes).get("http.route") == "/api/integrations/zortout/<token>"
+    search_span = next(span for span in finished if span.name == "res.partner.search")
+    controller_span = next(
+        span for span in finished if span.name == "controller Controller.receive_webhook"
+    )
+    assert search_span.parent.span_id == controller_span.context.span_id
+    assert controller_span.parent.span_id == server_spans[0].context.span_id
+    assert dict(controller_span.attributes).get("code.function") == "receive_webhook"
+    assert "Controller" in dict(controller_span.attributes).get("code.namespace", "")
+    write_span = next(span for span in finished if span.name == "res.partner.write")
+    assert dict(write_span.attributes).get("odoo.record_count") == 4
+    assert dict(search_span.attributes).get("odoo.record_count") == 2
+    print("method-spans-ok")
+
+
+def scenario_method_spans_off():
+    from opentelemetry import trace
+
+    from otel_tracing import bootstrap, spans
+
+    class Partner:
+        _name = "res.partner"
+
+        def __len__(self):
+            return 1
+
+        def write(self, vals):
+            return "off"
+
+    spans.patch_base_methods(Partner)
+    app = _App()
+    _install_fake_odoo(workers=0, evented=False, app=app)
+    exporter = _use_memory_exporter(bootstrap)
+    bootstrap.setup()
+    tracer = trace.get_tracer("test")
+    with tracer.start_as_current_span("parent"):
+        assert Partner().write({}) == "off"
+    trace.get_tracer_provider().force_flush()
+    names = [span.name for span in exporter.get_finished_spans()]
+    assert "res.partner.write" not in names, names
+    assert "parent" in names, names
+    print("method-spans-off-ok")
+
+
 def scenario_protocol():
     from otel_tracing.bootstrap import _build_exporter, _protocol
 
@@ -812,6 +1082,8 @@ SCENARIOS = {
     "fork-threadpool": scenario_fork_threadpool,
     "init-timeout": scenario_init_timeout,
     "init-error": scenario_init_error,
+    "method-spans": scenario_method_spans,
+    "method-spans-off": scenario_method_spans_off,
     "gevent": scenario_gevent,
     "sampler-off": scenario_sampler_off,
     "protocol": scenario_protocol,

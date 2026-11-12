@@ -21,7 +21,8 @@ RUN apt-get update && \
         'opentelemetry-instrumentation-wsgi==0.66b2' \
         'opentelemetry-instrumentation-psycopg2==0.66b2' \
         'opentelemetry-instrumentation-requests==0.66b2' \
-        'opentelemetry-instrumentation-urllib3==0.66b2' && \
+        'opentelemetry-instrumentation-urllib3==0.66b2' \
+        'opentelemetry-instrumentation-httpx==0.66b2' && \
     rm -rf /var/lib/apt/lists/*
 
 COPY ./src /mnt/extra-addons

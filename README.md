@@ -22,6 +22,10 @@ The deployment sets these. The image does not hard-code an endpoint.
 | `OTEL_TRACES_SAMPLER` | Standard SDK sampler name (`parentbased_always_on`, `always_on`, `always_off`, `traceidratio`, `parentbased_traceidratio`, …). |
 | `OTEL_TRACES_SAMPLER_ARG` | Sampler argument, such as the ratio for `traceidratio`. |
 | `OTEL_BSP_EXPORT_TIMEOUT` | Batch export timeout in milliseconds. Default `5000`, so a dead collector cannot hold worker shutdown for the SDK's 30s. |
+| `OTEL_INIT_TIMEOUT` | Seconds to wait for tracer init inside `Worker.start`. Default `3`. On timeout the worker serves without tracing. |
+| `OTEL_ODOO_METHOD_SPANS` | `true` (default) records ORM, custom-method, and cron spans. `false` leaves controller, SQL, and outbound HTTP spans in place. |
+| `OTEL_ODOO_METHOD_ALLOWLIST` | Comma-separated model names (`res.partner`) or `model.method` pairs. Empty means every model. Does not filter controller or cron spans. |
+| `OTEL_ODOO_METHOD_MIN_DURATION_MS` | Omit exported ORM and custom method spans shorter than this many milliseconds. Default `0` (keep the tree intact). |
 
 `http/protobuf` talks to the collector's HTTP port (usually 4318). `grpc` uses the gRPC port (usually 4317). Prefer `http/protobuf`. The gevent longpolling process still supports `grpc`: that export runs on a real thread so it does not stall the gevent hub.
 
@@ -29,9 +33,24 @@ Export uses a `BatchSpanProcessor`. Failures are logged on the background thread
 
 ### What a trace contains
 
-The server span is named `METHOD /path`. For `/api/partner/<slug>/...` the name uses a `{slug}` template and the slug is the attribute `bopp.partner.slug`. `http.route` is the path or that template. `http.response.status_code` is the HTTP status.
+A request waterfall is nested:
 
-Child spans are the SQL statement text (placeholders, not bound values) and the outbound HTTP call. Query-string secrets (`access_token`, `token`, `signature`, `password`, `api_key`, and similar), URL userinfo, `Authorization` / `Cookie` headers, request and response bodies, and `db.statement.parameters` are removed before export. Header capture env vars are not turned on.
+```
+POST /api/integrations/zortout/<token>          server
+  controller ZortoutWebhookController.receive_webhook
+    partner.get_partner_from_zortout_token      custom method
+      partner.search                            ORM
+        SELECT ...                              SQL
+    GET                                         outbound HTTP
+```
+
+The server span is named `METHOD` plus the matched route pattern, not the raw path. `http.route`, `http.target`, `url.path`, and `http.url` use that same pattern (`/api/integrations/zortout/<token>`, `/api/partner/<slug>/user`). Query strings are removed from server spans. Path parameters such as the partner slug are not copied onto attributes.
+
+The controller span carries `code.namespace`, `code.function`, and `http.route`. ORM spans are named `model.method` (`res.partner.write`) and record `odoo.model`, `odoo.method`, and `odoo.record_count` for `create`, `write`, `unlink`, `search`, `search_read`, and `read`. Public methods defined in BOPP addons (`crm_custom` and other extra addons) get the same kind of span, so the SQL they issue sits underneath the function that ran it. `ir.cron` jobs get one span each, `cron <job name>`, with `odoo.cron.method` when the server action calls `model.some_method()`.
+
+Skipped on purpose, to keep traces small: private and dunder methods (this includes compute, inverse, and onchange helpers), methods decorated as a compute, onchange, or constraint, and recordset plumbing (`sudo`, `with_context`, `mapped`, `filtered`, and the same family). Core models are not wrapped method-by-method; their `create` / `write` / `unlink` / `search` / `search_read` / `read` calls are. Cron helpers stay private; the job span is the `_callback` around the server action.
+
+Child spans also include the SQL statement text (placeholders, not bound values) and outbound HTTP from `requests` and `urllib3` (boto3). `httpx` is instrumented when that library is installed. Query-string secrets (`access_token`, `token`, `signature`, `password`, `api_key`, `key`, and similar), URL userinfo, `Authorization` / `Cookie` headers, request and response bodies, and `db.statement.parameters` are removed before export. Header capture is not turned on. Non-sensitive client query parameters such as `page` are kept.
 
 While a span is current, Odoo log lines gain `trace_id=<32 hex>` and `span_id=<16 hex>`. Outside a span those fields are `-`. Loki can match `trace_id` to the same id in Tempo.
 
@@ -43,13 +62,13 @@ While a span is current, Odoo log lines gain `trace_id=<32 hex>` and `span_id=<1
 - `workers = 0`: one process, initialized immediately.
 - Gevent longpolling is a separate `odoo gevent` process. It initializes tracing in that process after gevent's monkey patch.
 
-Cron jobs have no HTTP server span. Their SQL and outbound HTTP calls are root spans.
+Cron jobs have no HTTP server span. Each job has its own `cron <name>` root span, and the SQL and outbound HTTP it issues are children of that span.
 
 ### Rollout
 
 1. Ship this image. With `OTEL_ENABLED` unset, behavior matches the current image aside from the server-wide module import and one startup log line.
 2. The k8s manifests (BOPP-CRM/bopp-k8s) set the variables above on the Odoo deployment. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at the Tempo OTLP receiver or an OpenTelemetry collector.
-3. Confirm in Grafana: open a trace for `GET /api/partner/{slug}/user` and check that the LINE profile call and the SMS credit calls (`api.line.me`, `apiv2.godysms.com`, `api-v2.thaibulksms.com`) appear as client spans next to the SQL spans. This change does not make those calls faster.
+3. Confirm in Grafana: open a trace for `GET /api/partner/<slug>/user` or `POST /api/integrations/zortout/<token>`. The route pattern is the span name (the token and slug are not attributes). Under the controller span, ORM and custom-method spans parent the SQL. LINE and SMS calls (`api.line.me`, `apiv2.godysms.com`, `api-v2.thaibulksms.com`) appear as client spans under the method that made them.
 
 ### Verify locally
 
