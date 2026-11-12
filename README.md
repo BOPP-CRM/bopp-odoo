@@ -39,7 +39,7 @@ While a span is current, Odoo log lines gain `trace_id=<32 hex>` and `span_id=<1
 
 `otel_tracing` is a server-wide module (`server_wide_modules` includes it; the entrypoint adds it to a generated `odoo.conf` if a deployment's file omitted it). `post_load` runs in every process before workers are forked.
 
-- `workers > 0`: the parent process only applies the library patches and registers an `after_fork` hook. Each HTTP worker and each cron worker creates its own provider and exporter after `os.fork`. The parent never calls `set_tracer_provider`, because that flag is copied into the child and cannot be replaced, and a batch thread started in the parent does not survive fork.
+- `workers > 0`: the parent process only applies the library patches. Each HTTP worker and each cron worker creates its own provider when `Worker.start` runs, which is after `os.fork` returns. The parent never calls `set_tracer_provider`, because that flag is copied into the child and cannot be replaced, and a batch thread started in the parent does not survive fork. Init is not done from `os.register_at_fork`: that callback runs while `concurrent.futures.thread`'s fork lock is still held (boto3 loads that module during registry preload) and `ThreadPoolExecutor.submit` then deadlocks the worker. If init raises or exceeds `OTEL_INIT_TIMEOUT` (default 3s), the worker logs a warning and serves traffic without tracing.
 - `workers = 0`: one process, initialized immediately.
 - Gevent longpolling is a separate `odoo gevent` process. It initializes tracing in that process after gevent's monkey patch.
 

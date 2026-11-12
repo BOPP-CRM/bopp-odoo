@@ -4,9 +4,21 @@ Odoo with ``workers > 0`` preforks HTTP and cron workers and starts the
 longpolling service as a separate ``gevent`` process. A BatchSpanProcessor
 started in the parent dies across fork (its thread is not copied) and the
 Python API refuses to replace the global tracer provider. So the parent
-only installs library patches and a fork hook. Each worker creates its own
-provider and exporter after fork. ``workers = 0`` and the gevent process
-never fork workers, so they initialize immediately.
+only installs library patches. Each worker creates its own provider after
+``os.fork`` returns. ``workers = 0`` and the gevent process never fork
+workers, so they initialize immediately.
+
+The provider is not created from ``os.register_at_fork``. CPython runs
+``after_in_child`` hooks in registration order and ``before`` hooks in
+reverse order. ``concurrent.futures.thread`` (imported while Odoo preloads
+the registry, via crm_custom -> boto3) acquires a non-reentrant lock in its
+``before`` hook. An earlier ``after_in_child`` hook that then calls
+``ThreadPoolExecutor.submit`` waits on that lock forever, so the worker
+never returns from ``fork`` and never accepts HTTP. ``Worker.start`` runs
+only after every at-fork hook has finished.
+
+Init is fail-open: errors are logged and a hung init is abandoned after
+``OTEL_INIT_TIMEOUT`` seconds (default 3). The worker serves either way.
 
 Nothing is patched unless OTEL_ENABLED is the string ``true`` and an OTLP
 endpoint is set. Exporters run on a background batch thread; a dead
@@ -16,6 +28,7 @@ collector cannot fail or block a request.
 import logging
 import os
 import re
+import sys
 
 from .redact import sanitize_attributes, sanitize_url
 
@@ -24,10 +37,11 @@ _logger = logging.getLogger(__name__)
 _PARTNER_SLUG = re.compile(r"^/api/partner/(?P<slug>[^/]+)(?P<rest>/.*)?$")
 _TRACE_SUFFIX = " trace_id=%(otel_trace_id)s span_id=%(otel_span_id)s"
 _DEFAULT_EXPORT_TIMEOUT_MILLIS = 5000
+_DEFAULT_INIT_TIMEOUT_SEC = 3.0
 _DEFAULT_SERVICE_NAME = "bopp-odoo"
 
 # Set once per process. Forked children inherit the flags and must not patch
-# a second time; they only create a provider via the fork hook.
+# a second time; they only create a provider from Worker.start.
 _configured = False
 _provider_pid = None
 _active_exporter = None
@@ -50,7 +64,7 @@ def setup():
     _install_client_instrumentation()
 
     if _will_fork():
-        _register_fork_hook()
+        _install_worker_hook()
         _logger.info(
             "OpenTelemetry tracing deferred until after worker fork pid=%s workers=%s",
             os.getpid(),
@@ -58,7 +72,7 @@ def setup():
         )
         return
 
-    _init_provider()
+    _safe_init_provider()
 
 
 def _enabled_state():
@@ -106,18 +120,103 @@ def _will_fork():
     return _worker_count() > 0 and not _is_evented()
 
 
-def _register_fork_hook():
-    if not hasattr(os, "register_at_fork"):
-        _logger.warning("OpenTelemetry: os.register_at_fork is unavailable; workers will not trace")
+def _init_timeout_sec():
+    raw = os.environ.get("OTEL_INIT_TIMEOUT", str(_DEFAULT_INIT_TIMEOUT_SEC))
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return _DEFAULT_INIT_TIMEOUT_SEC
+
+
+def _thread_primitives():
+    """Real OS thread primitives, even when gevent has patched threading."""
+    try:
+        from gevent import monkey
+
+        if monkey.is_module_patched("threading"):
+            thread_cls = monkey.get_original("threading", "Thread")
+            event_cls = monkey.get_original("threading", "Event")
+            return thread_cls, event_cls
+    except Exception:
+        pass
+    import threading
+
+    return threading.Thread, threading.Event
+
+
+def _install_worker_hook():
+    """Create the provider from ``Worker.start``, after ``os.fork`` returns.
+
+    HTTP and cron workers both go through ``Worker.start``. The gevent
+    process is not a ``Worker``. A missing hook only disables tracing.
+    """
+    try:
+        from odoo.service.server import Worker
+    except Exception:
+        _logger.warning(
+            "OpenTelemetry: odoo.service.server.Worker is unavailable; workers will not trace",
+            exc_info=True,
+        )
         return
 
-    def _after_fork():
-        try:
-            _init_provider()
-        except Exception:
-            _logger.exception("OpenTelemetry worker init failed; continuing without tracing")
+    if getattr(Worker.start, "_bopp_otel", False):
+        return
 
-    os.register_at_fork(after_in_child=_after_fork)
+    original = Worker.start
+
+    def start(self, *args, **kwargs):
+        _safe_init_provider()
+        return original(self, *args, **kwargs)
+
+    start._bopp_otel = True
+    Worker.start = start
+
+
+def _safe_init_provider():
+    """Initialize tracing without blocking startup if init fails or hangs."""
+    try:
+        if _provider_pid == os.getpid():
+            return
+        _logger.info(
+            "OpenTelemetry worker init starting pid=%s threadpool_preloaded=%s",
+            os.getpid(),
+            "concurrent.futures.thread" in sys.modules,
+        )
+        thread_cls, event_cls = _thread_primitives()
+        done = event_cls()
+        box = {}
+
+        def _run():
+            try:
+                _init_provider()
+            except Exception as exc:
+                box["exc"] = exc
+            finally:
+                done.set()
+
+        thread = thread_cls(target=_run, name="bopp-otel-init", daemon=True)
+        thread.start()
+        timeout = _init_timeout_sec()
+        if not done.wait(timeout):
+            _logger.warning(
+                "OpenTelemetry init timed out after %ss; continuing without waiting pid=%s",
+                timeout,
+                os.getpid(),
+            )
+            return
+        exc = box.get("exc")
+        if exc is not None:
+            _logger.warning(
+                "OpenTelemetry init failed; continuing without tracing pid=%s",
+                os.getpid(),
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+    except Exception:
+        _logger.warning(
+            "OpenTelemetry init failed; continuing without tracing pid=%s",
+            os.getpid(),
+            exc_info=True,
+        )
 
 
 def _init_provider():

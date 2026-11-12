@@ -249,6 +249,37 @@ class ScenarioTests(unittest.TestCase):
         proc = run_scenario("sampler-off", env)
         self.assertIn("sampler-off-ok", proc.stdout)
 
+    def test_fork_after_threadpool_import_does_not_hang(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_SERVICE_NAME="bopp-odoo",
+            OTEL_TRACES_SAMPLER="always_on",
+            OTEL_INIT_TIMEOUT="5",
+        )
+        proc = run_scenario("fork-threadpool", env, timeout=20)
+        self.assertIn("fork-threadpool-ok", proc.stdout)
+
+    def test_init_timeout_still_serves(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+            OTEL_INIT_TIMEOUT="0.3",
+        )
+        proc = run_scenario("init-timeout", env, timeout=15)
+        self.assertIn("init-timeout-ok", proc.stdout)
+
+    def test_init_error_still_serves(self):
+        env = _clean_env(
+            OTEL_ENABLED="true",
+            OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:9",
+            OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf",
+        )
+        proc = run_scenario("init-error", env, timeout=15)
+        self.assertIn("init-error-ok", proc.stdout)
+
     def test_grpc_exporter_is_selected_from_the_protocol(self):
         env = _clean_env(
             OTEL_ENABLED="true",
@@ -269,11 +300,22 @@ def _install_fake_odoo(workers, evented, app):
     http.root = app
     tools = types.ModuleType("odoo.tools")
     tools.config = {"workers": workers}
+    service = types.ModuleType("odoo.service")
+    server = types.ModuleType("odoo.service.server")
+
+    class Worker:
+        def start(self):
+            self.started = True
+
+    server.Worker = Worker
     odoo.http = http
     odoo.tools = tools
+    odoo.service = service
     sys.modules["odoo"] = odoo
     sys.modules["odoo.http"] = http
     sys.modules["odoo.tools"] = tools
+    sys.modules["odoo.service"] = service
+    sys.modules["odoo.service.server"] = server
     return odoo
 
 
@@ -541,6 +583,12 @@ def scenario_fork():
     if pid == 0:
         os.close(read_fd)
         try:
+            assert bootstrap._provider_pid is None
+            from odoo.service.server import Worker
+
+            worker = Worker()
+            worker.start()
+            assert worker.started is True
             assert bootstrap._provider_pid == os.getpid(), bootstrap._provider_pid
             code, _payload = _call(app, "/api/partner/acme/user")
             assert code.startswith("200"), code
@@ -585,6 +633,129 @@ def scenario_fork():
     assert payload["slug"] == "acme"
     assert payload["count"] >= 1
     print("fork-ok")
+
+
+def scenario_fork_threadpool():
+    """Registry preload imports concurrent.futures.thread after post_load.
+
+    That is what crm_custom does via boto3. Creating the SDK from an
+    at-fork hook then deadlocks ThreadPoolExecutor.submit. Worker.start
+    runs after the lock has been reinitialized and must return.
+    """
+    import time
+
+    from otel_tracing import bootstrap
+
+    app = _App()
+    _install_fake_odoo(workers=3, evented=False, app=app)
+    bootstrap.setup()
+    assert bootstrap._provider_pid is None
+    import concurrent.futures.thread  # noqa: F401  (after the hook, like preload)
+
+    import select
+
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(read_fd, False)
+    pid = os.fork()
+    if pid == 0:
+        os.close(read_fd)
+        try:
+            from odoo.service.server import Worker
+
+            started = time.perf_counter()
+            Worker().start()
+            elapsed = time.perf_counter() - started
+            assert elapsed < 5, elapsed
+            assert bootstrap._provider_pid == os.getpid(), bootstrap._provider_pid
+            code, _payload = _call(app, "/web/health")
+            assert code.startswith("200"), code
+            os.write(write_fd, b"ok")
+        except Exception:
+            import traceback
+
+            os.write(write_fd, b"ERROR " + traceback.format_exc().encode())
+        finally:
+            os.close(write_fd)
+        os._exit(0)
+    os.close(write_fd)
+    deadline = time.perf_counter() + 12
+    raw = b""
+    while time.perf_counter() < deadline and not raw:
+        ready, _, _ = select.select([read_fd], [], [], 0.2)
+        if ready:
+            try:
+                raw = os.read(read_fd, 65536)
+            except BlockingIOError:
+                raw = b""
+        try:
+            waited, _status = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            break
+        if waited and not raw:
+            try:
+                raw = os.read(read_fd, 65536)
+            except BlockingIOError:
+                raw = b""
+            break
+    else:
+        if not raw:
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
+            raise AssertionError("child hung after fork with thread pool preloaded")
+    try:
+        os.waitpid(pid, 0)
+    except ChildProcessError:
+        pass
+    os.close(read_fd)
+    text = raw.decode()
+    assert text == "ok", text
+    print("fork-threadpool-ok")
+
+
+def scenario_init_timeout():
+    import time
+
+    from otel_tracing import bootstrap
+
+    def _hang():
+        time.sleep(30)
+
+    bootstrap._init_provider = _hang
+    app = _App()
+    _install_fake_odoo(workers=3, evented=False, app=app)
+    bootstrap.setup()
+    from odoo.service.server import Worker
+
+    started = time.perf_counter()
+    worker = Worker()
+    worker.start()
+    elapsed = time.perf_counter() - started
+    assert worker.started is True
+    assert elapsed < 2.0, elapsed
+    code, _payload = _call(app, "/web/health")
+    assert code.startswith("200"), code
+    print("init-timeout-ok")
+
+
+def scenario_init_error():
+    from otel_tracing import bootstrap
+
+    def _boom():
+        raise RuntimeError("collector init exploded")
+
+    bootstrap._init_provider = _boom
+    app = _App()
+    _install_fake_odoo(workers=3, evented=False, app=app)
+    bootstrap.setup()
+    from odoo.service.server import Worker
+
+    worker = Worker()
+    worker.start()
+    assert worker.started is True
+    assert bootstrap._provider_pid is None
+    code, _payload = _call(app, "/web/health")
+    assert code.startswith("200"), code
+    print("init-error-ok")
 
 
 def scenario_gevent():
@@ -638,6 +809,9 @@ SCENARIOS = {
     "enabled": scenario_enabled,
     "unreachable": scenario_unreachable,
     "fork": scenario_fork,
+    "fork-threadpool": scenario_fork_threadpool,
+    "init-timeout": scenario_init_timeout,
+    "init-error": scenario_init_error,
     "gevent": scenario_gevent,
     "sampler-off": scenario_sampler_off,
     "protocol": scenario_protocol,
