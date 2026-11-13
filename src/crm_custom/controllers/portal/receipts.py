@@ -8,6 +8,32 @@ from odoo.http import request
 from ....util.portal_auth import get_authenticated_portal_user
 from ....util.request import json_response
 
+# Portal list pages request 20. CSV export pages at 100
+# (bopp-portal collectPages). A lower cap makes that export stop early.
+RECEIPT_LIST_DEFAULT_LIMIT = 20
+RECEIPT_LIST_MAX_LIMIT = 100
+
+# Fields the JSON serializer reads. receipt_image_file is omitted: it is a
+# non-stored image whose compute downloads receipt_image from S3, and the
+# payload only uses the URL. read() still refreshes pending reward previews.
+_RECEIPT_API_READ_FIELDS = [
+    "receipt_number",
+    "receipt_image",
+    "amount",
+    "state",
+    "reject_reason",
+    "submitted_date",
+    "reviewed_date",
+    "reviewed_by_id",
+    "user_tier_id",
+    "tier_convert_points",
+    "reward_points",
+    "zortout_order_id",
+    "user_id",
+    "spending_point_id",
+    "reward_point_id",
+]
+
 
 class PortalReceiptsController(http.Controller):
     @http.route("/api/portal/receipts", type="http", auth="public", methods=["GET"], csrf=False, cors="*")
@@ -36,7 +62,7 @@ class PortalReceiptsController(http.Controller):
                 ("user_id.line_user_id", "ilike", search_term),
             ]
 
-        limit = self._parse_int(kwargs.get("limit"))
+        limit = self._receipt_list_limit(kwargs.get("limit"))
         offset = self._parse_int(kwargs.get("offset")) or 0
 
         receipt_model = request.env["crm.partner.receipt.redeem"].sudo()
@@ -47,9 +73,7 @@ class PortalReceiptsController(http.Controller):
             order="submitted_date desc, id desc",
         )
         total = receipt_model.search_count(domain)
-
-        if receipts:
-            receipts.read()
+        self._read_receipts_for_api(receipts)
 
         return json_response({
             "receipts": [
@@ -129,7 +153,7 @@ class PortalReceiptsController(http.Controller):
                 status=400,
             )
 
-        receipt.read()
+        self._read_receipts_for_api(receipt)
         return json_response({
             "receipt": self._serialize_receipt(receipt),
         }, status=201)
@@ -181,7 +205,7 @@ class PortalReceiptsController(http.Controller):
             return receipt_response["error"]
 
         receipt = receipt_response["receipt"]
-        receipt.read()
+        self._read_receipts_for_api(receipt)
 
         return json_response({
             "receipt": self._serialize_receipt(receipt),
@@ -417,6 +441,16 @@ class PortalReceiptsController(http.Controller):
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    def _receipt_list_limit(self, value):
+        parsed = self._parse_int(value)
+        if parsed is None or parsed < 1:
+            return RECEIPT_LIST_DEFAULT_LIMIT
+        return min(parsed, RECEIPT_LIST_MAX_LIMIT)
+
+    def _read_receipts_for_api(self, receipts):
+        if receipts:
+            receipts.read(list(_RECEIPT_API_READ_FIELDS))
 
     def _get_receipt(self, partner, receipt_id):
         receipt = request.env["crm.partner.receipt.redeem"].sudo().search([
