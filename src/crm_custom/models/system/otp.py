@@ -1,6 +1,8 @@
 import logging
 import secrets
 import string
+import threading
+import time
 
 import requests
 import os
@@ -14,6 +16,18 @@ from ....util.phone import is_valid_th_msisdn, normalize_th_msisdn
 from .sms_otp_providers import GODYSMS_PROVIDER, THAIBULKSMS_PROVIDER
 
 _logger = logging.getLogger(__name__)
+
+# Process-local on purpose. Prefork workers do not share memory after fork.
+# The lock is taken only while serving a request, never in the master process
+# before os.fork, so a child does not inherit it held.
+SMS_OTP_CREDIT_CACHE_TTL_PARAM = "crm.otp.sms_credit_cache_ttl_seconds"
+SMS_OTP_CREDIT_CACHE_TTL_DEFAULT = 120
+_sms_credit_cache_lock = threading.Lock()
+_sms_credit_cache = {}
+
+
+def _sms_credit_now():
+    return time.monotonic()
 
 
 class OTP(models.Model):
@@ -97,10 +111,80 @@ class OTP(models.Model):
         return otp
 
     @api.model
-    def has_sms_otp_credit(self):
-        return self._provider_has_credit(GODYSMS_PROVIDER) or self._provider_has_credit(
-            THAIBULKSMS_PROVIDER
+    def _sms_otp_credit_cache_ttl(self):
+        """Seconds to keep a definitive credit result. ``0`` disables the cache.
+
+        A missing or invalid parameter uses the default. Only an explicit
+        ``0`` turns the cache off.
+        """
+        raw = self.env["ir.config_parameter"].sudo().get_param(
+            SMS_OTP_CREDIT_CACHE_TTL_PARAM,
+            str(SMS_OTP_CREDIT_CACHE_TTL_DEFAULT),
         )
+        if raw is None or str(raw).strip() == "":
+            return SMS_OTP_CREDIT_CACHE_TTL_DEFAULT
+        try:
+            ttl = int(str(raw).strip())
+        except (TypeError, ValueError):
+            return SMS_OTP_CREDIT_CACHE_TTL_DEFAULT
+        if ttl < 0:
+            return SMS_OTP_CREDIT_CACHE_TTL_DEFAULT
+        return ttl
+
+    @api.model
+    def _compute_sms_otp_credit(self):
+        """Return ``(has_credit, cacheable)``.
+
+        A provider error is not cacheable unless another provider has already
+        confirmed credit. Exceptions propagate and are not cached.
+        """
+        godysms_credit, godysms_ok = self._godysms_credit_status()
+        if godysms_ok and godysms_credit >= 1:
+            return True, True
+
+        thaibulk_credit, thaibulk_ok = self._thaibulksms_credit_status()
+        if thaibulk_ok and thaibulk_credit >= 1:
+            return True, True
+        if godysms_ok and thaibulk_ok:
+            return False, True
+        _logger.debug("crm.otp sms credit result not cached after a provider error")
+        return False, False
+
+    @api.model
+    def _cached_sms_otp_credit(self):
+        now = _sms_credit_now()
+        with _sms_credit_cache_lock:
+            entry = _sms_credit_cache.get(self.env.cr.dbname)
+            if entry and entry["expires_at"] > now:
+                return entry["has_credit"]
+        return None
+
+    @api.model
+    def _store_sms_otp_credit(self, has_credit, ttl):
+        if ttl <= 0:
+            return
+        expires_at = _sms_credit_now() + ttl
+        with _sms_credit_cache_lock:
+            _sms_credit_cache[self.env.cr.dbname] = {
+                "has_credit": bool(has_credit),
+                "expires_at": expires_at,
+            }
+
+    @api.model
+    def _clear_sms_otp_credit_cache(self):
+        with _sms_credit_cache_lock:
+            _sms_credit_cache.clear()
+
+    @api.model
+    def has_sms_otp_credit(self):
+        cached = self._cached_sms_otp_credit()
+        if cached is not None:
+            return cached
+
+        has_credit, cacheable = self._compute_sms_otp_credit()
+        if cacheable:
+            self._store_sms_otp_credit(has_credit, self._sms_otp_credit_cache_ttl())
+        return bool(has_credit)
 
     def make_as_fail(self, reason: str):
         return self.write({
