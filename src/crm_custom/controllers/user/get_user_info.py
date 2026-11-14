@@ -46,13 +46,15 @@ class GetOrCreateUserController(http.Controller):
                 "line_user_id": user_id,
                 "partner_id": partner.id,
             })
-
         else:
-            user.sudo().write({
+            user = user.sudo()
+            changed = user._changed_vals({
                 "display_name": display_name,
                 "picture_url": picture_url,
             })
-            user = request.env["crm.user"].sudo().browse(user.id)
+            if changed:
+                user.write(changed)
+                user = request.env["crm.user"].sudo().browse(user.id)
 
         user._update_tier()
         return json_response(self._serialize_user_response(user, partner))
