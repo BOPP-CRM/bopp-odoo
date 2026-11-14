@@ -49,6 +49,7 @@ RESPONSE_KEYS = {
     "birth_date",
     "gender",
     "address",
+    "custom_fields",
     "is_updated_user_info",
     "tier",
 }
@@ -528,6 +529,7 @@ class TestUserProfileRefresh(TransactionCase):
             "birth_date": False,
             "gender": False,
             "address": False,
+            "custom_fields": {},
             "is_updated_user_info": False,
             "tier": dict(MEMBER_TIER),
         }
@@ -604,7 +606,13 @@ class TestUserProfileRefresh(TransactionCase):
         self.assertEqual(body["error"], "unauthorized")
 
     def test_put_unchanged_profile_does_not_sync(self):
-        self.user.write({"is_updated_user_info": True, "address": "Bangkok"})
+        # An unconfigured registration form still requires gender and birth_date.
+        self.user.write({
+            "is_updated_user_info": True,
+            "address": "Bangkok",
+            "gender": "M",
+            "birth_date": "1990-01-02",
+        })
         self.env.cr.postcommit.clear()
         write_date = self.user.write_date
         status, body = self._put({
@@ -622,6 +630,11 @@ class TestUserProfileRefresh(TransactionCase):
         self.assertEqual(self.outbound.zortout_calls(), [])
 
     def test_put_changed_display_name_still_syncs(self):
+        self.user.with_context(skip_zortout_auto_sync=True).write({
+            "gender": "M",
+            "birth_date": "1990-01-02",
+        })
+        self.env.cr.postcommit.clear()
         status, body = self._put({"display_name": "From Put"})
         self.user.invalidate_recordset()
         self.assertEqual(status, 200)

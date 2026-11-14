@@ -504,6 +504,7 @@ def _expected_body(name=DISPLAY):
         "birth_date": False,
         "gender": False,
         "address": False,
+        "custom_fields": {},
         "is_updated_user_info": False,
         "tier": {
             "code": "member",
