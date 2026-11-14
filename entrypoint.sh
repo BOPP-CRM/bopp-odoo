@@ -23,6 +23,15 @@ else
     cp /etc/odoo/odoo.conf.template /etc/odoo/odoo.conf
 fi
 
+# Load otel_tracing in every process (HTTP workers, cron, gevent) so
+# post_load can install tracing. No-op unless OTEL_ENABLED=true.
+python3 - <<'PY'
+import sys
+sys.path.insert(0, "/mnt/extra-addons")
+from otel_tracing.server_wide import ensure_server_wide_module
+ensure_server_wide_module("/etc/odoo/odoo.conf")
+PY
+
 if [ "$(id -u)" = "0" ]; then
     chown odoo:odoo /etc/odoo/odoo.conf
 fi

@@ -131,9 +131,15 @@ class SmsOtpProviderMixin(models.AbstractModel):
         return all([_env("THAIBULKSMS_API_KEY"), _env("THAIBULKSMS_API_SECRET")])
 
     @api.model
-    def _godysms_remaining_credit(self):
+    def _godysms_credit_status(self):
+        """Return ``(credit, definitive)``.
+
+        ``definitive`` is False when a configured provider could not be
+        reached. Callers must not cache that result. A malformed body still
+        raises, matching the previous ``_godysms_remaining_credit`` behaviour.
+        """
         if not self._godysms_configured():
-            return 0
+            return 0, True
 
         base_url = _env("SMS_API_ENDPOINT").rstrip("/")
         url = f"{base_url}/openapi/sms/balance"
@@ -146,17 +152,27 @@ class SmsOtpProviderMixin(models.AbstractModel):
             response = requests.get(url, headers=headers, timeout=30)
         except requests.RequestException as exc:
             _logger.warning("crm.otp godysms credit check failed: %s", exc)
-            return 0
+            return 0, False
 
         if response.status_code != 200:
-            return 0
+            return 0, False
 
-        return _parse_remaining_credit(response.json())
+        return _parse_remaining_credit(response.json()), True
 
     @api.model
-    def _thaibulksms_sms_api_remaining_credit(self, pool):
+    def _godysms_remaining_credit(self):
+        credit, _definitive = self._godysms_credit_status()
+        return credit
+
+    @api.model
+    def _thaibulksms_sms_api_credit_status(self, pool):
+        """Return ``(credit or None, definitive)``.
+
+        ``None`` with ``definitive`` True means the SMS API is not configured
+        and the caller should fall through to the OTP credit cache.
+        """
         if not self._thaibulksms_sms_api_configured():
-            return None
+            return None, True
 
         url = "https://api-v2.thaibulksms.com/credit"
         try:
@@ -169,12 +185,37 @@ class SmsOtpProviderMixin(models.AbstractModel):
             _logger.warning(
                 "crm.otp thaibulksms %s credit check failed: %s", pool, exc
             )
-            return 0
+            return 0, False
 
         if response.status_code != 200:
-            return 0
+            return 0, False
 
-        return _parse_pool_sms_credit(response.json(), pool)
+        return _parse_pool_sms_credit(response.json(), pool), True
+
+    @api.model
+    def _thaibulksms_sms_api_remaining_credit(self, pool):
+        credit, _definitive = self._thaibulksms_sms_api_credit_status(pool)
+        return credit
+
+    @api.model
+    def _thaibulksms_credit_status(self):
+        """Return ``(credit, definitive)`` for the ThaiBulkSMS OTP provider."""
+        if not self._thaibulksms_otp_configured():
+            return 0, True
+
+        force = self._thaibulksms_otp_force()
+        if force in ("standard", "corporate"):
+            api_credit, api_ok = self._thaibulksms_sms_api_credit_status(force)
+            if not api_ok:
+                return 0, False
+            if api_credit is not None:
+                return api_credit, True
+
+        cached = self._thaibulksms_cached_otp_credit()
+        if cached is not None:
+            return cached, True
+
+        return 0, True
 
     @api.model
     def _thaibulksms_cached_otp_credit(self):
@@ -196,20 +237,8 @@ class SmsOtpProviderMixin(models.AbstractModel):
 
     @api.model
     def _thaibulksms_remaining_credit(self):
-        if not self._thaibulksms_otp_configured():
-            return 0
-
-        force = self._thaibulksms_otp_force()
-        if force in ("standard", "corporate"):
-            api_credit = self._thaibulksms_sms_api_remaining_credit(force)
-            if api_credit is not None:
-                return api_credit
-
-        cached = self._thaibulksms_cached_otp_credit()
-        if cached is not None:
-            return cached
-
-        return 0
+        credit, _definitive = self._thaibulksms_credit_status()
+        return 0 if credit is None else credit
 
     @api.model
     def _provider_has_credit(self, provider):

@@ -97,8 +97,9 @@ class UpdateUserController(http.Controller):
 
         update_vals["is_updated_user_info"] = True
 
-        if update_vals:
-            user.sudo().write(update_vals)
+        changed = user.sudo()._changed_vals(update_vals)
+        if changed:
+            user.sudo().write(changed)
             user = request.env["crm.user"].sudo().browse(user.id)
 
         serializer = GetOrCreateUserController()
