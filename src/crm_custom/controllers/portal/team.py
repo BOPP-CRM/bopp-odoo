@@ -1,7 +1,7 @@
 import json
 
 from odoo import fields, http
-from odoo.exceptions import ValidationError
+from odoo.exceptions import AccessError, UserError
 from odoo.http import request
 
 from ....util.portal_auth import (
@@ -87,19 +87,16 @@ class PortalTeamController(http.Controller):
             )
 
         try:
-            team_user = request.env["res.users"].create_partner_portal_user(
-                portal_user.crm_partner_id,
+            partner = self._sudo_own_partner(portal_user)
+            team_user = request.env["res.users"].sudo().create_partner_portal_user(
+                partner,
                 name,
                 email,
                 password,
                 portal_role=payload.get("role"),
             )
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "team_user_not_allowed", "message": str(error)},
-                status=400,
-            )
+        except UserError as error:
+            return self._handled_error(error, "team_user_not_allowed")
 
         return json_response({
             "team_user": self._serialize_team_user(team_user),
@@ -151,12 +148,8 @@ class PortalTeamController(http.Controller):
                 active=payload.get("active"),
                 password=payload.get("password"),
             )
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "team_user_not_allowed", "message": str(error)},
-                status=400,
-            )
+        except UserError as error:
+            return self._handled_error(error, "team_user_not_allowed")
 
         return json_response({
             "team_user": self._serialize_team_user(team_user),
@@ -210,19 +203,17 @@ class PortalTeamController(http.Controller):
             )
 
         try:
-            invite = request.env["partner.portal.invite"].create_invite(
-                portal_user.crm_partner_id,
-                portal_user,
+            partner = self._sudo_own_partner(portal_user)
+            invited_by = request.env["res.users"].sudo().browse(portal_user.id)
+            invite = request.env["partner.portal.invite"].sudo().create_invite(
+                partner,
+                invited_by,
                 name or email,
                 email,
                 portal_role=payload.get("role"),
             )
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "invite_not_allowed", "message": str(error)},
-                status=400,
-            )
+        except UserError as error:
+            return self._handled_error(error, "invite_not_allowed")
 
         return json_response({
             "invite": self._serialize_invite(invite),
@@ -246,12 +237,8 @@ class PortalTeamController(http.Controller):
 
         try:
             invite.action_cancel()
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "invite_not_allowed", "message": str(error)},
-                status=400,
-            )
+        except UserError as error:
+            return self._handled_error(error, "invite_not_allowed")
 
         return json_response({
             "invite": self._serialize_invite(invite),
@@ -298,13 +285,9 @@ class PortalTeamController(http.Controller):
             )
 
         try:
-            team_user = invite.accept(password, name=name)
-        except ValidationError as error:
-            request.env.cr.rollback()
-            return json_response(
-                {"error": "invite_not_allowed", "message": str(error)},
-                status=400,
-            )
+            team_user = invite.sudo().accept(password, name=name)
+        except UserError as error:
+            return self._handled_error(error, "invite_not_allowed")
 
         portal_token = request.env["partner.portal.token"].sudo().create_for_user(team_user)
         partner = team_user.crm_partner_id
@@ -323,6 +306,17 @@ class PortalTeamController(http.Controller):
                 "logo_url": partner.logo or False,
             },
         }, status=201)
+
+    def _sudo_own_partner(self, portal_user):
+        return request.env["partner"].sudo().browse(portal_user.crm_partner_id.id)
+
+    def _handled_error(self, error, code):
+        request.env.cr.rollback()
+        status = 403 if isinstance(error, AccessError) else 400
+        return json_response(
+            {"error": code, "message": str(error)},
+            status=status,
+        )
 
     def _parse_payload(self):
         try:
