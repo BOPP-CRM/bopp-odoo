@@ -150,14 +150,16 @@ class PartnerPortalInvite(models.Model):
         if len(password or "") < 8:
             raise ValidationError("Password must be at least 8 characters.")
 
-        user = self.env["res.users"].create_partner_portal_user(
-            invite.partner_id,
+        users = self.env["res.users"].sudo()
+        partner = users.env["partner"].browse(invite.partner_id.id)
+        user = users.create_partner_portal_user(
+            partner,
             (name or invite.name).strip(),
             invite.email,
             password,
             portal_role=invite.portal_role,
         )
-        invite.write({
+        invite.sudo().write({
             "state": "accepted",
             "accepted_at": fields.Datetime.now(),
             "accepted_user_id": user.id,
